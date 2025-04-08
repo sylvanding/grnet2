@@ -19,7 +19,7 @@ inline int get_n_threads(int n) {
   return std::max(std::min(1 << pow_2, CUDA_NUM_THREADS), 1);
 }
 
-__device__ int compute_index(
+static __device__ int compute_index(
   int offset_x, int offset_y, int offset_z, int len_y, int len_z) {
   return offset_x * len_y * len_z + offset_y * len_z + offset_z;
 }

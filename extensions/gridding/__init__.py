@@ -65,9 +65,13 @@ class Gridding(torch.nn.Module):
 
 class GriddingReverseFunction(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, scales, grid):
-        # scales: (scale_x, scale_y, scale_z)
+    def forward(ctx, scales, grid): # grid shape: (B, Dx*Dy*Dz)
+        # scales: tuple (scale_x, scale_y, scale_z)
         scale_x, scale_y, scale_z = scales
+        # Ensure grid is flat
+        if grid.ndim != 2:
+             # Maybe add a warning or reshape, but expect flattened input
+             raise ValueError(f"GriddingReverseFunction.forward expects flattened grid (B, N), got {grid.shape}")
         ptcloud = gridding.rev_forward(scale_x, scale_y, scale_z, grid)
         ctx.save_for_backward(torch.Tensor(scales).int(), grid, ptcloud) # Save scales as tensor
         return ptcloud
@@ -77,9 +81,10 @@ class GriddingReverseFunction(torch.autograd.Function):
         scales_tensor, grid, ptcloud = ctx.saved_tensors
         scales = scales_tensor.tolist() # Convert tensor back to list
         scale_x, scale_y, scale_z = scales[0], scales[1], scales[2]
+        # Call CUDA backward, returns grad_grid with shape (B, Dx*Dy*Dz)
         grad_grid = gridding.rev_backward(scale_x, scale_y, scale_z, ptcloud, grid, grad_ptcloud)
-        # Reshape according to the actual grid dimensions
-        grad_grid = grad_grid.view(-1, scale_x, scale_y, scale_z)
+
+        # Return gradient for scales (None) and grid (original flat shape)
         return None, grad_grid
 
 

@@ -20,7 +20,7 @@ inline int get_n_threads(int n) {
   return max(min(1 << pow_2, CUDA_NUM_THREADS), 1);
 }
 
-__device__ int compute_index(int offset_x,
+static __device__ int compute_index(int offset_x,
                              int offset_y,
                              int offset_z,
                              int scale_y,
@@ -127,8 +127,6 @@ torch::Tensor gridding_reverse_cuda_forward(int scale_x,
                                             cudaStream_t stream) {
   int batch_size = grid.size(0);
   int n_pts      = scale_x * scale_y * scale_z;
-
-  TORCH_CHECK(grid.size(1) == n_pts, "Grid size mismatch");
 
   torch::Tensor ptcloud =
     torch::zeros({batch_size, n_pts, 3}, torch::CUDA(torch::kFloat));
@@ -245,7 +243,6 @@ torch::Tensor gridding_reverse_cuda_backward(int scale_x,
   int n_pts      = ptcloud.size(1);
 
   TORCH_CHECK(n_pts == scale_x * scale_y * scale_z, "Point cloud size does not match scales");
-  TORCH_CHECK(grid.size(1) == n_pts, "Grid size mismatch");
 
   torch::Tensor grad_grid =
     torch::zeros({batch_size, n_pts}, torch::CUDA(torch::kFloat));
