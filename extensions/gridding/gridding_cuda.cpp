@@ -8,6 +8,7 @@
 
 #include <ATen/cuda/CUDAContext.h>
 #include <torch/extension.h>
+#include <vector>
 
 // NOTE: AT_ASSERT has become AT_CHECK on master after 0.4.
 #define CHECK_CUDA(x) AT_ASSERTM(x.is_cuda(), #x " must be a CUDA tensor")
@@ -31,11 +32,16 @@ torch::Tensor gridding_cuda_backward(torch::Tensor grid_pt_weights,
                                      torch::Tensor grad_grid,
                                      cudaStream_t stream);
 
-torch::Tensor gridding_reverse_cuda_forward(int scale,
+torch::Tensor gridding_reverse_cuda_forward(int scale_x,
+                                            int scale_y,
+                                            int scale_z,
                                             torch::Tensor grid,
                                             cudaStream_t stream);
 
-torch::Tensor gridding_reverse_cuda_backward(torch::Tensor ptcloud,
+torch::Tensor gridding_reverse_cuda_backward(int scale_x,
+                                             int scale_y,
+                                             int scale_z,
+                                             torch::Tensor ptcloud,
                                              torch::Tensor grid,
                                              torch::Tensor grad_ptcloud,
                                              cudaStream_t stream);
@@ -66,14 +72,20 @@ torch::Tensor gridding_backward(torch::Tensor grid_pt_weights,
                                 stream);
 }
 
-torch::Tensor gridding_reverse_forward(int scale, torch::Tensor grid) {
+torch::Tensor gridding_reverse_forward(int scale_x,
+                                       int scale_y,
+                                       int scale_z,
+                                       torch::Tensor grid) {
   CHECK_INPUT(grid);
 
   cudaStream_t stream = at::cuda::getCurrentCUDAStream();
-  return gridding_reverse_cuda_forward(scale, grid, stream);
+  return gridding_reverse_cuda_forward(scale_x, scale_y, scale_z, grid, stream);
 }
 
-torch::Tensor gridding_reverse_backward(torch::Tensor ptcloud,
+torch::Tensor gridding_reverse_backward(int scale_x,
+                                        int scale_y,
+                                        int scale_z,
+                                        torch::Tensor ptcloud,
                                         torch::Tensor grid,
                                         torch::Tensor grad_ptcloud) {
   CHECK_INPUT(ptcloud);
@@ -81,7 +93,7 @@ torch::Tensor gridding_reverse_backward(torch::Tensor ptcloud,
   CHECK_INPUT(grad_ptcloud);
 
   cudaStream_t stream = at::cuda::getCurrentCUDAStream();
-  return gridding_reverse_cuda_backward(ptcloud, grid, grad_ptcloud, stream);
+  return gridding_reverse_cuda_backward(scale_x, scale_y, scale_z, ptcloud, grid, grad_ptcloud, stream);
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
