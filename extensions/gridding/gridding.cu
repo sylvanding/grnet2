@@ -16,7 +16,7 @@
 // Computer the number of threads needed in GPU
 inline int get_n_threads(int n) {
   const int pow_2 = std::log(static_cast<float>(n)) / std::log(2.0);
-  return max(min(1 << pow_2, CUDA_NUM_THREADS), 1);
+  return std::max(std::min(1 << pow_2, CUDA_NUM_THREADS), 1);
 }
 
 __device__ int compute_index(
