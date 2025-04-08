@@ -1,0 +1,13 @@
+argparse
+easydict
+h5py
+matplotlib==3.0.3
+numpy
+open3d==0.15.2
+opencv-python
+pyexr
+scipy
+tensorboardX==1.9
+transforms3d
+tqdm
+protobuf==3.20.*
