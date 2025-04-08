@@ -64,7 +64,7 @@ def get_args_from_command_line():
         "--fine_tune",
         dest="fine_tune",
         help="Fine tune the model with L1 gridding loss",
-        default=None,
+        default=False,
     )
     args = parser.parse_args()
 
@@ -72,10 +72,11 @@ def get_args_from_command_line():
     # args.inference = True
     # args.test = True
     # args.infer_exp = True
-    if args.weights is None:
-        args.weights = "./checkpoints/ckpt-epoch-100-fine_tune.pth"
-    if args.fine_tune is None:
-        args.fine_tune = True
+    
+    # if args.weights is None:
+    #     args.weights = "./checkpoints/ckpt-epoch-100-fine_tune.pth"
+    # args.fine_tune = False
+    
     # inference mode end
     return args
 
