@@ -30,7 +30,7 @@ __C.DATASETS.KITTI.PARTIAL_POINTS_PATH           = '/home/SENSETIME/xiehaozhe/Da
 __C.DATASETS.KITTI.BOUNDING_BOX_FILE_PATH        = '/home/SENSETIME/xiehaozhe/Datasets/KITTI/bboxes/%s.txt'
 __C.DATASETS.SMLM                                = edict()
 __C.DATASETS.SMLM.ROOT_DIR                       = '/repos/PUDM/datasets/smlm_pc'
-__C.DATASETS.SMLM.is_scale_z                     = False
+__C.DATASETS.SMLM.is_scale_z                     = True
 __C.DATASETS.SMLM.is_scale_half                  = False
 __C.DATASETS.SMLM.scale                          = 0.9
 
@@ -80,12 +80,12 @@ __C.TRAIN                                        = edict()
 __C.TRAIN.BATCH_SIZE                             = 1
 __C.TRAIN.N_EPOCHS                               = 450
 __C.TRAIN.SAVE_FREQ                              = 50
-__C.TRAIN.LEARNING_RATE                          = 1e-4
+__C.TRAIN.LEARNING_RATE                          = 1e-5 # 1e-4
 __C.TRAIN.LR_MILESTONES                          = [300] # 50
 __C.TRAIN.GAMMA                                  = .5
 __C.TRAIN.BETAS                                  = (.9, .999)
 __C.TRAIN.WEIGHT_DECAY                           = 0
-__C.TRAIN.LOCAL                                  = False
+__C.TRAIN.LOCAL                                  = True
 __C.TRAIN.is_random_sample                       = False
 __C.TRAIN.is_fine_tune                           = False
 #

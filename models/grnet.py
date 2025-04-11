@@ -27,7 +27,7 @@ class RandomPointSampling(torch.nn.Module):
         _ptcloud = torch.split(pred_cloud, 1, dim=0)
         ptclouds = []
         for p in _ptcloud:
-            non_zeros = torch.sum(p.abs(), dim=2).ne(0)
+            non_zeros = torch.sum(p, dim=2).ne(0)
             p = p[non_zeros].unsqueeze(dim=0)
             n_pts = p.size(1)
 

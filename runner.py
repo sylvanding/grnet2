@@ -74,8 +74,8 @@ def get_args_from_command_line():
     # args.infer_exp = True
     
     # if args.weights is None:
-    #     args.weights = "./checkpoints/ckpt-epoch-100-fine_tune.pth"
-    # args.fine_tune = False
+    #     args.weights = "./checkpoints/ckpt-epoch-250-non-cubic.pth"
+    # args.fine_tune = True
     
     # inference mode end
     return args

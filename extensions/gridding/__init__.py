@@ -49,7 +49,7 @@ class Gridding(torch.nn.Module):
         _ptcloud = torch.split(scaled_ptcloud, 1, dim=0)
         grids = []
         for p in _ptcloud:
-            non_zeros = torch.sum(p.abs(), dim=2).ne(0) # Check absolute sum for zeros
+            non_zeros = torch.sum(p, dim=2).ne(0) # Check absolute sum for zeros
             # Ensure p has points after filtering before applying gridding
             if non_zeros.any():
                  p_filtered = p[non_zeros].unsqueeze(dim=0)

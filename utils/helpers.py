@@ -44,7 +44,7 @@ def get_ptcloud_img(ptcloud):
     ax = fig.gca(projection=Axes3D.name, adjustable='box')
     # ax = fig.gca(projection=Axes3D.name)
     ax.axis('off')
-    ax.axis('scaled')
+    ax.set_box_aspect([1,1,1]) # 替代 ax.axis('scaled') or ax.axis('auto')
     ax.view_init(elev=90, azim=-90) # 水平倾斜, 旋转：xy平面
 
     # max, min = np.max(ptcloud), np.min(ptcloud)
