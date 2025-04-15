@@ -42,7 +42,6 @@ echo 'export PYTHONPATH=$PYTHONPATH:/usr/lib/python3.8/site-packages/chamfer-2.0
 echo 'export PYTHONPATH=$PYTHONPATH:/usr/lib/python3.8/site-packages/cubic_feature_sampling-1.1.0-py3.8-linux-x86_64.egg' >> ~/.bashrc
 echo 'export PYTHONPATH=$PYTHONPATH:/usr/lib/python3.8/site-packages/gridding-2.1.0-py3.8-linux-x86_64.egg' >> ~/.bashrc
 echo 'export PYTHONPATH=$PYTHONPATH:/usr/lib/python3.8/site-packages/gridding_distance-1.0.0-py3.8-linux-x86_64.egg' >> ~/.bashrc
-source ~/.bashrc
 
 export PYTHONPATH=$PYTHONPATH:/usr/lib/python3.8/site-packages/chamfer-2.0.0-py3.8-linux-x86_64.egg
 export PYTHONPATH=$PYTHONPATH:/usr/lib/python3.8/site-packages/cubic_feature_sampling-1.1.0-py3.8-linux-x86_64.egg
