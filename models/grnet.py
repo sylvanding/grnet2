@@ -21,8 +21,8 @@ class RandomPointSampling(torch.nn.Module):
         self.n_points = n_points
 
     def forward(self, pred_cloud, partial_cloud=None):
-        if partial_cloud is not None:
-            pred_cloud = torch.cat([partial_cloud, pred_cloud], dim=1)
+        # if partial_cloud is not None:
+        #     pred_cloud = torch.cat([partial_cloud, pred_cloud], dim=1)
 
         _ptcloud = torch.split(pred_cloud, 1, dim=0)
         ptclouds = []
@@ -30,10 +30,11 @@ class RandomPointSampling(torch.nn.Module):
             non_zeros = torch.sum(p, dim=2).ne(0)
             p = p[non_zeros].unsqueeze(dim=0)
             n_pts = p.size(1)
+            print("n_pts:", n_pts)
 
-            if n_pts < self.n_points:
+            if n_pts < self.n_points: # copy points
                 rnd_idx = torch.cat([torch.randint(0, n_pts, (self.n_points, ))])
-            else:
+            else: # remove points
                 rnd_idx = torch.randperm(p.size(1))[:self.n_points]
             ptclouds.append(p[:, rnd_idx, :])
 

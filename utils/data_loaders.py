@@ -5,6 +5,10 @@
 # @Last Modified time: 2020-02-22 19:21:32
 # @Email:  cshzxie@gmail.com
 
+import sys
+
+sys.path.append("/repos/grnet2")
+
 import json
 import logging
 import numpy as np
@@ -103,7 +107,7 @@ class SMLMDataLoader(torch.utils.data.dataset.Dataset):
             "remote": {"train": [0, 1000], "valid": [1000, 1024], "test": [1001, 1002], "test-exp": [0, 1]},
         }
         if self.split != "test-exp":
-            h5_file_path = os.path.join(self.dataroot, "train", "smlm_pc_v3.h5")
+            h5_file_path = os.path.join(self.dataroot, "train", "smlm_pc_v4.h5")
         else:
             h5_file_path = os.path.join("datasets/region_x0_y0_z1_2048_16384_norm.h5")
 
@@ -115,41 +119,129 @@ class SMLMDataLoader(torch.utils.data.dataset.Dataset):
         with h5py.File(h5_file_path, "r") as f:
             self.input_data = f["input_data"][start:end].astype(np.float32)
             self.gt_data = f["gt_data"][start:end].astype(np.float32)
+            self.original_data = f["original_data"][start:end].astype(np.float32)
             normalize_params = f["norm_params"]
             self.normalize_params = {
                 "centroid": normalize_params["centroid"][start:end].astype(np.float32),
                 "scale": normalize_params["scale"][start:end].astype(np.float32),
             }
-        assert self.input_data.shape[0] == self.gt_data.shape[0]
+        assert self.input_data.shape[0] == self.gt_data.shape[0] == self.original_data.shape[0]
 
         if self.is_scale_z:
-            self.input_data, self.gt_data, self.normalize_params = self.scale_z(  # type: ignore
-                self.input_data, self.gt_data, self.normalize_params
+            self.input_data, self.gt_data, self.original_data, self.normalize_params = self.scale_z(  # type: ignore
+                self.input_data, self.gt_data, self.original_data, self.normalize_params
             )
 
         if self.is_scale_half:
             # from -1~1 to -0.5~0.5
             self.input_data /= 2
             self.gt_data /= 2
+            self.original_data /= 2
 
         self.input_data = self.input_data * self.scale
         self.gt_data = self.gt_data * self.scale
-
+        self.original_data = self.original_data * self.scale
+        
         print("input_data.shape:", self.input_data.shape)
+        print("gt_data.shape:", self.gt_data.shape)
+        print("original_data.shape:", self.original_data.shape)
         print("local:", self.local)
         print("is_scale_z:", self.is_scale_z)
         print("is_scale_half:", self.is_scale_half)
         print("scale:", self.scale)
+        
+        self.transforms = None
+        if cfg.TRAIN.transforms:
+            self.transforms = self._get_transforms(cfg, self.split)
+        
+        self.noise_points_ratio = cfg.TRAIN.noise_points_ratio
+        if self.split == "train" and self.noise_points_ratio > 0:
+            self.input_data = self._get_noise(self.input_data, self.noise_points_ratio)
+        
+        print("noise added. input_data.shape:", self.input_data.shape)
+        print("max of input_data:", np.max(self.input_data,axis=(0,1)))
+        print("min of input_data:", np.min(self.input_data,axis=(0,1)))
+
+    def _get_transforms(self, cfg, split):
+        if split != "train":
+            return None
+        return utils.data_transforms.Compose(cfg.TRAIN.transforms_params)
+
+    def _get_noise(self, pc, noise_points_ratio):
+        """
+        为点云添加噪声点
+        
+        Args:
+            pc: 点云数据，形状为(点云数，点数，3)
+            noise_points_ratio: 噪声点比例
+            
+        Returns:
+            添加了噪声点的点云
+        """
+        if noise_points_ratio <= 0:
+            return pc
+        
+        # 获取点云形状
+        batch_size, num_points, _ = pc.shape
+        
+        # 计算要添加的噪声点数量
+        noise_points_count = int(num_points * noise_points_ratio)
+        
+        # 如果噪声点数量为0，直接返回原始点云
+        if noise_points_count == 0:
+            return pc
+        
+        # 创建结果点云的副本
+        result_pc = copy.deepcopy(pc)
+        
+        for i in range(batch_size):
+            # 为每个点云生成随机噪声点
+            # 分别按照点云x,y,z轴的最大最小值来设置噪声点的范围
+            pc_min = np.min(pc[i], axis=0)  # 获取x,y,z三个维度的最小值
+            pc_max = np.max(pc[i], axis=0)  # 获取x,y,z三个维度的最大值
+            
+            # 在每个维度的范围内分别随机生成噪声点坐标
+            noise_points = np.zeros((noise_points_count, 3))
+            for dim in range(3):  # 分别处理x,y,z三个维度
+                noise_points[:, dim] = np.random.uniform(
+                    low=pc_min[dim],
+                    high=pc_max[dim],
+                    size=noise_points_count
+                )
+            
+            # 随机选择要删除的点的索引
+            indices_to_remove = np.random.choice(
+                num_points, 
+                noise_points_count, 
+                replace=False
+            )
+            
+            # 删除选定的点
+            remaining_indices = np.setdiff1d(np.arange(num_points), indices_to_remove)
+            
+            # 将剩余点与噪声点合并
+            result_pc[i] = np.vstack([
+                result_pc[i][remaining_indices],
+                noise_points
+            ])
+                
+        return result_pc
 
     def __getitem__(self, index):
         result = {}
         partial_pc = copy.deepcopy(self.input_data[index])
         complete_pc = copy.deepcopy(self.gt_data[index])
+        original_pc = copy.deepcopy(self.original_data[index])
         if self.split == "train" or self.split == "valid":
             if self.is_random_sample:
-                partial_pc = self.random_sample(complete_pc, 3500)
+                partial_pc = self.random_sample(complete_pc, 2048)
             result['partial_cloud'] = partial_pc
             result['gtcloud'] = complete_pc
+            result['original_cloud'] = original_pc
+            if self.split == "train":
+                # augment
+                if self.transforms is not None:
+                    result = self.transforms(result)
         else:
             normalize_params = {
                 "centroid": self.normalize_params["centroid"][index],
@@ -157,6 +249,7 @@ class SMLMDataLoader(torch.utils.data.dataset.Dataset):
             }
             result['partial_cloud'] = partial_pc
             result['gtcloud'] = complete_pc
+            result['original_cloud'] = original_pc
             result['normalize_params'] = normalize_params
         return result
 
@@ -164,7 +257,7 @@ class SMLMDataLoader(torch.utils.data.dataset.Dataset):
         return len(self.input_data)
 
     def scale_z(
-            self, input_data, gt_data, params
+            self, input_data, gt_data, original_data, params
     ) -> Union[Tuple[np.ndarray, np.ndarray, dict], Tuple[np.ndarray, np.ndarray]]:
         """
         z轴scale
@@ -182,15 +275,16 @@ class SMLMDataLoader(torch.utils.data.dataset.Dataset):
         # scale = params['scale'].detach().cpu().numpy() # (B, 1, 3)
         # 只对z轴进行scale：z from 0~ to 0~1
         furthest_distances_z = np.amax(
-            np.abs(input_data[..., 2]), axis=1, keepdims=True  # B, n, 1
+            np.abs(original_data[..., 2]), axis=1, keepdims=True  # B, n, 1
         )  # (b, 1, 1)
-        input_data[..., 2] = input_data[..., 2] / furthest_distances_z
+        original_data[..., 2] = original_data[..., 2] / furthest_distances_z
         gt_data[..., 2] = gt_data[..., 2] / furthest_distances_z
+        input_data[..., 2] = input_data[..., 2] / furthest_distances_z
         if params is not None:
             params["scale"][..., 2] = furthest_distances_z
-            return input_data, gt_data, params
+            return input_data, gt_data, original_data, params
         else:
-            return input_data, gt_data
+            return input_data, gt_data, original_data
 
     def random_sample(self, pc, n):
         idx = np.random.permutation(pc.shape[0])
@@ -438,3 +532,22 @@ DATASET_LOADER_MAPPING = {
     'KITTI': KittiDataLoader,
     'SMLM': SMLMDataLoader
 }  # yapf: disable
+
+if __name__ == "__main__":
+    from config import cfg
+    from data_loaders import DATASET_LOADER_MAPPING
+    dataset_loader = DATASET_LOADER_MAPPING['ShapeNet'](cfg)
+    dataset = dataset_loader.get_dataset(DatasetSubset.TRAIN)
+    print(len(dataset))
+
+if __name__ == "__main__":
+    from config import cfg
+    import utils.helpers
+    import matplotlib.pyplot as plt
+    smlm_loader = SMLMDataLoader(cfg, "train")
+    data = iter(smlm_loader).__next__()
+    print(data['partial_cloud'].shape)
+    print(data['gtcloud'].shape)
+    gt_ptcloud = data['gtcloud'].squeeze().cpu().numpy()
+    gt_ptcloud_img = utils.helpers.get_ptcloud_img(gt_ptcloud/cfg.DATASETS.SMLM.scale)
+    plt.imsave("/repos/GRNet2/output/gt_ptcloud_img.png", gt_ptcloud_img)

@@ -91,9 +91,12 @@ def train_net(cfg):
 
     # Set up loss functions
     chamfer_dist = ChamferDistance()
-    gridding_loss = GriddingLoss(    # lgtm [py/unused-local-variable]
-        scales=cfg.NETWORK.GRIDDING_LOSS_SCALES,
-        alphas=cfg.NETWORK.GRIDDING_LOSS_ALPHAS)
+    gridding_loss_sparse = GriddingLoss(
+        scales=cfg.NETWORK.GRIDDING_LOSS_SCALES_SPARSE,
+        alphas=cfg.NETWORK.GRIDDING_LOSS_ALPHAS_SPARSE)
+    gridding_loss_dense = GriddingLoss(
+        scales=cfg.NETWORK.GRIDDING_LOSS_SCALES_DENSE,
+        alphas=cfg.NETWORK.GRIDDING_LOSS_ALPHAS_DENSE)
 
     # Load pretrained model if exists
     init_epoch = 0
@@ -107,14 +110,20 @@ def train_net(cfg):
 
     # Training/Testing the network
     for epoch_idx in range(init_epoch + 1, cfg.TRAIN.N_EPOCHS + 1):
-        if epoch_idx < 100:
-            alpha = 0.01
-        elif epoch_idx < 200:
+        if epoch_idx < 50: # train sparse
+            alpha = 0.1
+            gridding_loss_sparse_ratio = 0.1
+            gridding_loss_dense_ratio = 0.1
+        elif epoch_idx < 100: # train sparse and dense
             alpha = 0.5
-        else:
+            gridding_loss_sparse_ratio = 0.15
+            gridding_loss_dense_ratio = 0.15
+        else: # train dense
             alpha = 1.0
+            gridding_loss_sparse_ratio = 0.15
+            gridding_loss_dense_ratio = 0.2
         if cfg.TRAIN.is_fine_tune:
-            alpha = 0.5
+            alpha = 1.0
 
         epoch_start_time = time()
 
@@ -133,13 +142,23 @@ def train_net(cfg):
 
             sparse_ptcloud, dense_ptcloud = grnet(data)
             if cfg.TRAIN.is_fine_tune:
-                sparse_loss = 0.8 * chamfer_dist(sparse_ptcloud, data['gtcloud']) + 0.2 * gridding_loss(sparse_ptcloud,
+                raise NotImplementedError('Fine-tuning is not implemented yet.')
+                sparse_loss = 0.8 * chamfer_dist(sparse_ptcloud, data['gtcloud']) + 0.2 * gridding_loss_sparse(sparse_ptcloud,
                                                                                            data['gtcloud'])
-                dense_loss = chamfer_dist(dense_ptcloud, data['gtcloud'])
+                dense_loss = chamfer_dist(dense_ptcloud, data['gtcloud']) + 0.2 * gridding_loss_dense(dense_ptcloud,
+                                                                                           data['gtcloud'])
             else:
-                sparse_loss = chamfer_dist(sparse_ptcloud, data['gtcloud'])
-                dense_loss = chamfer_dist(dense_ptcloud, data['gtcloud'])
-            _loss = sparse_loss + alpha*dense_loss
+                sparse_loss = (1-gridding_loss_sparse_ratio) * chamfer_dist(sparse_ptcloud, data['gtcloud']) + gridding_loss_sparse_ratio * gridding_loss_sparse(sparse_ptcloud,data['gtcloud'])
+                if cfg.TRAIN.using_original_data_for_dense_gridding:
+                    _gridding_loss_dense = gridding_loss_dense(dense_ptcloud,data['original_cloud'])
+                else:
+                    _gridding_loss_dense = gridding_loss_dense(dense_ptcloud,data['gtcloud'])
+                if cfg.TRAIN.using_original_data_for_dense_chamfer:
+                    _chamfer_dist = chamfer_dist(dense_ptcloud, data['original_cloud'])
+                else:
+                    _chamfer_dist = chamfer_dist(dense_ptcloud, data['gtcloud'])
+                dense_loss = (1-gridding_loss_dense_ratio) * _chamfer_dist + gridding_loss_dense_ratio * _gridding_loss_dense
+            _loss = (sparse_loss + alpha*dense_loss)/(1+alpha)
             losses.update([sparse_loss.item() * 1000, dense_loss.item() * 1000])
 
             grnet.zero_grad()
@@ -160,12 +179,16 @@ def train_net(cfg):
         epoch_end_time = time()
         train_writer.add_scalar('Loss/Epoch/Sparse', losses.avg(0), epoch_idx)
         train_writer.add_scalar('Loss/Epoch/Dense', losses.avg(1), epoch_idx)
+        train_writer.add_scalar('Loss/Epoch/LR', grnet_optimizer.param_groups[0]['lr'], epoch_idx)
         logging.info(
             '[Epoch %d/%d] EpochTime = %.3f (s) Losses = %s' %
             (epoch_idx, cfg.TRAIN.N_EPOCHS, epoch_end_time - epoch_start_time, ['%.4f' % l for l in losses.avg()]))
 
         # Validate the current model
-        metrics = test_net(cfg, epoch_idx, val_data_loader, val_writer, grnet)
+        metrics = test_net(cfg, epoch_idx, val_data_loader, val_writer, grnet,
+                           gridding_loss_sparse_ratio=gridding_loss_sparse_ratio,
+                           gridding_loss_dense_ratio=gridding_loss_dense_ratio,
+                           alpha=alpha)
 
         # Save ckeckpoints
         if epoch_idx % cfg.TRAIN.SAVE_FREQ == 0 or cfg.TRAIN.LOCAL:

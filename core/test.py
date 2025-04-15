@@ -19,7 +19,7 @@ from utils.metrics import Metrics
 from tqdm import tqdm
 
 
-def test_net(cfg, epoch_idx=-1, test_data_loader=None, test_writer=None, grnet=None):
+def test_net(cfg, epoch_idx=-1, test_data_loader=None, test_writer=None, grnet=None, **kwargs):
     # Enable the inbuilt cudnn auto-tuner to find the best algorithm to use
     torch.backends.cudnn.benchmark = True
 
@@ -49,8 +49,13 @@ def test_net(cfg, epoch_idx=-1, test_data_loader=None, test_writer=None, grnet=N
 
     # Set up loss functions
     chamfer_dist = ChamferDistance()
-    gridding_loss = GriddingLoss(scales=cfg.NETWORK.GRIDDING_LOSS_SCALES,
-                                 alphas=cfg.NETWORK.GRIDDING_LOSS_ALPHAS)    # lgtm [py/unused-import]
+    gridding_loss_sparse = GriddingLoss(
+        scales=cfg.NETWORK.GRIDDING_LOSS_SCALES_SPARSE,
+        alphas=cfg.NETWORK.GRIDDING_LOSS_ALPHAS_SPARSE)
+    gridding_loss_dense = GriddingLoss(
+        scales=cfg.NETWORK.GRIDDING_LOSS_SCALES_DENSE,
+        alphas=cfg.NETWORK.GRIDDING_LOSS_ALPHAS_DENSE)
+    
 
     # Testing loop
     n_samples = len(test_data_loader)
@@ -70,8 +75,20 @@ def test_net(cfg, epoch_idx=-1, test_data_loader=None, test_writer=None, grnet=N
                 data[k] = utils.helpers.var_or_cuda(v)
 
             sparse_ptcloud, dense_ptcloud = grnet(data)
-            sparse_loss = chamfer_dist(sparse_ptcloud, data['gtcloud'])
-            dense_loss = chamfer_dist(dense_ptcloud, data['gtcloud'])
+            if 'gridding_loss_sparse_ratio' in kwargs and 'gridding_loss_dense_ratio' in kwargs:
+                sparse_loss = (1-kwargs['gridding_loss_sparse_ratio']) * chamfer_dist(sparse_ptcloud, data['gtcloud']) + kwargs['gridding_loss_sparse_ratio'] * gridding_loss_sparse(sparse_ptcloud,data['gtcloud'])
+                if cfg.TRAIN.using_original_data_for_dense_gridding:
+                    _gridding_loss_dense = gridding_loss_dense(dense_ptcloud,data['original_cloud'])
+                else:
+                    _gridding_loss_dense = gridding_loss_dense(dense_ptcloud,data['gtcloud'])
+                if cfg.TRAIN.using_original_data_for_dense_chamfer:
+                    _chamfer_dist = chamfer_dist(dense_ptcloud, data['original_cloud'])
+                else:
+                    _chamfer_dist = chamfer_dist(dense_ptcloud, data['gtcloud'])
+                dense_loss = (1-kwargs['gridding_loss_dense_ratio']) * _chamfer_dist + kwargs['gridding_loss_dense_ratio'] * _gridding_loss_dense
+            else:
+                sparse_loss = chamfer_dist(sparse_ptcloud, data['gtcloud'])
+                dense_loss = chamfer_dist(dense_ptcloud, data['gtcloud'])
             test_losses.update([sparse_loss.item() * 1000, dense_loss.item() * 1000])
             _metrics = Metrics.get(dense_ptcloud, data['gtcloud'])
             test_metrics.update(_metrics)

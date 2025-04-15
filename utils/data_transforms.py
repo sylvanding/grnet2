@@ -34,7 +34,7 @@ class Compose(object):
                 for k, v in data.items():
                     if k in objects and k in data:
                         if transform.__class__ in [
-                                RandomCrop, RandomFlip, RandomRotatePoints, RandomScalePoints, RandomMirrorPoints
+                                RandomCrop, RandomFlip, RandomRotatePoints, RandomMirrorPoints, RandomScalePoints
                         ]:
                             data[k] = transform(v, rnd_value)
                         else:
@@ -49,8 +49,8 @@ class ToTensor(object):
 
     def __call__(self, arr):
         shape = arr.shape
-        if len(shape) == 3:    # RGB/Depth Images
-            arr = arr.transpose(2, 0, 1)
+        # if len(shape) == 3:    # RGB/Depth Images
+        #     arr = arr.transpose(2, 0, 1)
 
         # Ref: https://discuss.pytorch.org/t/torch-from-numpy-not-support-negative-strides/3663/2
         return torch.from_numpy(arr.copy()).float()
@@ -178,12 +178,13 @@ class RandomClipPoints(object):
 
 class RandomRotatePoints(object):
     def __init__(self, parameters):
-        pass
+        self.angle = parameters['angle']
 
     def __call__(self, ptcloud, rnd_value):
         trfm_mat = transforms3d.zooms.zfdir2mat(1)
-        angle = 2 * math.pi * rnd_value
-        trfm_mat = np.dot(transforms3d.axangles.axangle2mat([0, 1, 0], angle), trfm_mat)
+        angle = self.angle * rnd_value
+        # 只在xy平面旋转，使用z轴作为旋转轴
+        trfm_mat = np.dot(transforms3d.axangles.axangle2mat([0, 0, 1], angle), trfm_mat)
 
         ptcloud[:, :3] = np.dot(ptcloud[:, :3], trfm_mat.T)
         return ptcloud
@@ -191,11 +192,12 @@ class RandomRotatePoints(object):
 
 class RandomScalePoints(object):
     def __init__(self, parameters):
-        self.scale = parameters['scale']
+        self.scale_low = parameters['scale_low']
+        self.scale_high = parameters['scale_high']
 
     def __call__(self, ptcloud, rnd_value):
         trfm_mat = transforms3d.zooms.zfdir2mat(1)
-        scale = np.random.uniform(1.0 / self.scale * rnd_value, self.scale * rnd_value)
+        scale = self.scale_low + (self.scale_high - self.scale_low) * rnd_value
         trfm_mat = np.dot(transforms3d.zooms.zfdir2mat(scale), trfm_mat)
 
         ptcloud[:, :3] = np.dot(ptcloud[:, :3], trfm_mat.T)
@@ -247,3 +249,9 @@ class NormalizeObjectPose(object):
 
         data[self.ptcloud_key] = ptcloud
         return data
+
+if __name__ == "__main__":
+    random_mirror_points = RandomMirrorPoints(parameters={})
+    ptcloud = np.random.rand(100, 3)
+    ptcloud = random_mirror_points(ptcloud, 0.5)
+    
