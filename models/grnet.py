@@ -44,7 +44,7 @@ class RandomPointSampling(torch.nn.Module):
 class GRNet(torch.nn.Module):
     def __init__(self, cfg=None):
         super(GRNet, self).__init__()
-        self.gridding_scales = (128, 128, 16)
+        self.gridding_scales = (256, 256, 32)
         self.gridding = Gridding(scales=self.gridding_scales)
 
         # --- Encoder ---
@@ -52,69 +52,69 @@ class GRNet(torch.nn.Module):
             torch.nn.Conv3d(1, 32, kernel_size=3, padding=1), # Use kernel 3, pad 1 to maintain size before pooling
             torch.nn.BatchNorm3d(32),
             torch.nn.LeakyReLU(0.2),
-            # Pool only X, Y: (128, 128, 16) -> (64, 64, 16)
-            torch.nn.MaxPool3d(kernel_size=(2, 2, 1), stride=(2, 2, 1))
+            # Pool only X, Y: (256, 256, 32) -> (128, 128, 16)
+            torch.nn.MaxPool3d(kernel_size=2, stride=2)
         )
         self.conv2 = torch.nn.Sequential(
             torch.nn.Conv3d(32, 64, kernel_size=3, padding=1),
             torch.nn.BatchNorm3d(64),
             torch.nn.LeakyReLU(0.2),
-            # Pool only X, Y: (64, 64, 16) -> (32, 32, 8)
+            # Pool only X, Y: (128, 128, 16) -> (64, 64, 8)
             torch.nn.MaxPool3d(kernel_size=2, stride=2)
         )
         self.conv3 = torch.nn.Sequential(
             torch.nn.Conv3d(64, 128, kernel_size=3, padding=1),
             torch.nn.BatchNorm3d(128),
             torch.nn.LeakyReLU(0.2),
-            # Pool only X, Y: (32, 32, 8) -> (16, 16, 8)
-            torch.nn.MaxPool3d(kernel_size=(2, 2, 1), stride=(2, 2, 1))
+            # Pool only X, Y: (64, 64, 8) -> (32, 32, 4)
+            torch.nn.MaxPool3d(kernel_size=2, stride=2)
         )
         self.conv4 = torch.nn.Sequential(
             torch.nn.Conv3d(128, 256, kernel_size=3, padding=1),
             torch.nn.BatchNorm3d(256),
             torch.nn.LeakyReLU(0.2),
-            # Pool X, Y, Z: (16, 16, 8) -> (8, 8, 4)
+            # Pool X, Y, Z: (32, 32, 4) -> (16, 16, 2)
             torch.nn.MaxPool3d(kernel_size=2, stride=2)
         )
 
         # --- Bottleneck ---
-        # Flattened size: 256 * 8 * 8 * 4 = 65536
-        self.fc5_in_features = 256 * 8 * 8 * 4
+        # Flattened size: 256 * 16 * 16 * 2 = 131072
+        self.fc5_in_features = 256 * 16 * 16 * 2
         self.fc5 = torch.nn.Sequential(
-            torch.nn.Linear(self.fc5_in_features, 2048), # Adjusted size
-            torch.nn.ReLU()
+            torch.nn.Linear(self.fc5_in_features, self.fc5_in_features//16),
+            torch.nn.SiLU()
         )
         self.fc6 = torch.nn.Sequential(
-            torch.nn.Linear(2048, self.fc5_in_features), # Adjusted size
-            torch.nn.ReLU()
+            torch.nn.Linear(self.fc5_in_features//16, self.fc5_in_features),
+            torch.nn.SiLU()
         )
         # Shape to reshape back to before dconv7
-        self.fc6_reshape_shape = (-1, 256, 8, 8, 4) # Adjusted size
+        self.fc6_reshape_shape = (-1, 256, 16, 16, 2) # Adjusted size
 
         # --- Decoder ---
         self.dconv7 = torch.nn.Sequential(
-            # Upsample (8, 8, 4) -> (16, 16, 8)
+            # Upsample (16, 16, 2) -> (32, 32, 4)
             torch.nn.ConvTranspose3d(256, 128, kernel_size=4, stride=2, bias=False, padding=1),
             torch.nn.BatchNorm3d(128),
-            torch.nn.ReLU()
+            torch.nn.LeakyReLU(0.2)
         )
         self.dconv8 = torch.nn.Sequential(
-            # Upsample (16, 16, 8) -> (32, 32, 8)
-            torch.nn.ConvTranspose3d(128, 64, kernel_size=(4, 4, 1), stride=(2, 2, 1), bias=False, padding=(1, 1, 0)), # Adjust kernel/stride/pad for Z=1
+            # Upsample (32, 32, 4) -> (64, 64, 8)
+            torch.nn.ConvTranspose3d(128, 64, kernel_size=4, stride=2, bias=False, padding=1), # Adjust kernel/stride/pad for Z=1
             torch.nn.BatchNorm3d(64),
-            torch.nn.ReLU()
+            torch.nn.LeakyReLU(0.2)
         )
         self.dconv9 = torch.nn.Sequential(
-             # Upsample (32, 32, 8) -> (64, 64, 16)
+            # Upsample (64, 64, 8) -> (128, 128, 16)
             torch.nn.ConvTranspose3d(64, 32, kernel_size=4, stride=2, bias=False, padding=1),
             torch.nn.BatchNorm3d(32),
-            torch.nn.ReLU()
+            torch.nn.LeakyReLU(0.2)
         )
         self.dconv10 = torch.nn.Sequential(
-             # Upsample (64, 64, 16) -> (128, 128, 16)
-            torch.nn.ConvTranspose3d(32, 1, kernel_size=(4, 4, 1), stride=(2, 2, 1), bias=False, padding=(1, 1, 0)),
+            # Upsample (128, 128, 16) -> (256, 256, 32)
+            torch.nn.ConvTranspose3d(32, 1, kernel_size=4, stride=2, bias=False, padding=1),
             torch.nn.BatchNorm3d(1),
-            torch.nn.ReLU()
+            torch.nn.LeakyReLU(0.2)
         )
 
         # --- Final Layers ---
@@ -122,25 +122,31 @@ class GRNet(torch.nn.Module):
         self.point_sampling = RandomPointSampling(n_points=2048)
         self.feature_sampling = CubicFeatureSampling(neighborhood_size=1) # ns=1 (8 corners)
         # Sampled feature sizes remain the same (C * 8)
-        feat_size_32 = 32 * 8 # 256
-        feat_size_16 = 64 * 8 # 512
-        feat_size_8 = 128 * 8 # 1024
-        concat_feat_size = feat_size_32 + feat_size_16 + feat_size_8 # 1792
+        feat_size_16 = 256 * 8 # 2048
+        feat_size_32 = 128 * 8 # 1024
+        feat_size_64 = 64 * 8 # 512
+        feat_size_128 = 32 * 8 # 256
+        feat_size_256 = 1 * 8 # 8
+        concat_feat_size = feat_size_256 + feat_size_128 + feat_size_64 + feat_size_32 + feat_size_16 # 3848
 
         self.fc11 = torch.nn.Sequential(
-            torch.nn.Linear(concat_feat_size, concat_feat_size),
-            torch.nn.ReLU()
+            torch.nn.Linear(concat_feat_size, 1924),
+            torch.nn.SiLU()
         )
         self.fc12 = torch.nn.Sequential(
-            torch.nn.Linear(concat_feat_size, 448),
-            torch.nn.ReLU()
+            torch.nn.Linear(1924, 962),
+            torch.nn.SiLU()
         )
         self.fc13 = torch.nn.Sequential(
-            torch.nn.Linear(448, 112),
-            torch.nn.ReLU()
+            torch.nn.Linear(962, 481),
+            torch.nn.SiLU()
+        )
+        self.fc14 = torch.nn.Sequential(
+            torch.nn.Linear(481, 112),
+            torch.nn.SiLU()
         )
         # Output 24 values per point (8 offsets * 3 coords)
-        self.fc14 = torch.nn.Linear(112, 24)
+        self.fc15 = torch.nn.Linear(112, 24)
         self.n_dense_points = 16384 # 2048 * 8
 
     def forward(self, data):
@@ -153,38 +159,38 @@ class GRNet(torch.nn.Module):
         # print(partial_cloud.size())     # torch.Size([batch_size, N_partial, 3])
         # Gridding output: (B, Dx*Dy*Dz), reshape to (B, 1, Dx, Dy, Dz)
         pt_features_xyz_l = self.gridding(partial_cloud).view(-1, 1, *self.gridding_scales)
-        # print("Initial Grid:", pt_features_xyz_l.shape) # [B, 1, 128, 128, 16]
+        # print("Initial Grid:", pt_features_xyz_l.shape) # [B, 1, 256, 256, 32]
 
         # --- Encoder ---
-        pt_features_64 = self.conv1(pt_features_xyz_l)
-        # print("After conv1:", pt_features_64.shape)  # [B, 32, 64, 64, 16]
-        pt_features_32 = self.conv2(pt_features_64)
-        # print("After conv2:", pt_features_32.shape)  # [B, 64, 32, 32, 16]
-        pt_features_16 = self.conv3(pt_features_32)
-        # print("After conv3:", pt_features_16.shape)  # [B, 128, 16, 16, 16]
-        pt_features_8 = self.conv4(pt_features_16)
-        # print("After conv4 (bottleneck input):", pt_features_8.shape)   # [B, 256, 8, 8, 8]
+        pt_features_128 = self.conv1(pt_features_xyz_l)
+        # print("After conv1:", pt_features_128.shape)  # [B, 32, 128, 128, 16]
+        pt_features_64 = self.conv2(pt_features_128)
+        # print("After conv2:", pt_features_64.shape)  # [B, 64, 64, 64, 8]
+        pt_features_32 = self.conv3(pt_features_64)
+        # print("After conv3:", pt_features_32.shape)  # [B, 128, 32, 32, 4]
+        pt_features_16 = self.conv4(pt_features_32)
+        # print("After conv4 (bottleneck input):", pt_features_16.shape)   # [B, 256, 16, 16, 2]
 
         # --- Bottleneck ---
-        features = self.fc5(pt_features_8.view(pt_features_8.size(0), -1))
+        features = self.fc5(pt_features_16.view(pt_features_16.size(0), -1))
         # print("Bottleneck features:", features.shape) # [B, 2048]
-        pt_features_8_r = self.fc6(features).view(*self.fc6_reshape_shape) + pt_features_8
-        # print("After fc6 + skip:", pt_features_8_r.shape) # [B, 256, 8, 8, 8]
+        pt_features_16_r = self.fc6(features).view(*self.fc6_reshape_shape) + pt_features_16
+        # print("After fc6 + skip:", pt_features_16_r.shape) # [B, 256, 16, 16, 2]
 
         # --- Decoder ---
-        pt_features_16_r = self.dconv7(pt_features_8_r) + pt_features_16 # Input skip from conv3 output
-        # print("After dconv7 + skip:", pt_features_16_r.shape) # [B, 128, 16, 16, 16]
-        pt_features_32_r = self.dconv8(pt_features_16_r) + pt_features_32 # Input skip from conv2 output
-        # print("After dconv8 + skip:", pt_features_32_r.shape) # [B, 64, 32, 32, 16]
-        pt_features_64_r = self.dconv9(pt_features_32_r) + pt_features_64 # Input skip from conv1 output
-        # print("After dconv9 + skip:", pt_features_64_r.shape) # [B, 32, 64, 64, 16]
-        pt_features_xyz_r = self.dconv10(pt_features_64_r) + pt_features_xyz_l # Input skip from initial grid
-        # print("Final grid features:", pt_features_xyz_r.shape) # [B, 1, 128, 128, 16]
+        pt_features_32_r = self.dconv7(pt_features_16_r) + pt_features_32 # Input skip from conv3 output
+        # print("After dconv7 + skip:", pt_features_32_r.shape) # [B, 128, 32, 32, 4]
+        pt_features_64_r = self.dconv8(pt_features_32_r) + pt_features_64 # Input skip from conv2 output
+        # print("After dconv8 + skip:", pt_features_64_r.shape) # [B, 64, 64, 64, 8]
+        pt_features_128_r = self.dconv9(pt_features_64_r) + pt_features_128 # Input skip from conv1 output
+        # print("After dconv9 + skip:", pt_features_128_r.shape) # [B, 32, 128, 128, 16]
+        pt_features_xyz_r = self.dconv10(pt_features_128_r) + pt_features_xyz_l # Input skip from initial grid
+        # print("Final grid features:", pt_features_xyz_r.shape) # [B, 1, 256, 256, 32]
 
         # --- Reverse Gridding and Sampling ---
         flat_grid = pt_features_xyz_r.view(pt_features_xyz_r.size(0), -1)
         sparse_cloud = self.gridding_rev(flat_grid)
-        # print(sparse_cloud.size())      # torch.Size([B, 128*128*16, 3]) output range approx [-1, 1]
+        # print(sparse_cloud.size())      # torch.Size([B, 256*256*32, 3]) output range approx [-1, 1]
 
         # Sample points from the sparse cloud generated by GriddingReverse
         # Combine with partial cloud before sampling if provided
@@ -193,25 +199,31 @@ class GRNet(torch.nn.Module):
 
         # --- Feature Sampling and Final FC Layers ---
         # Use features from decoder path with correct shapes
-        point_features_32 = self.feature_sampling(sampled_sparse_cloud, pt_features_64_r).flatten(start_dim=2)
-        # print("Sampled features L32:", point_features_32.shape) # [B, 2048, 256]
-        point_features_16 = self.feature_sampling(sampled_sparse_cloud, pt_features_32_r).flatten(start_dim=2)
-        # print("Sampled features L16:", point_features_16.shape) # [B, 2048, 512]
-        point_features_8 = self.feature_sampling(sampled_sparse_cloud, pt_features_16_r).flatten(start_dim=2) # Use pt_features_8_r from decoder output
-        # print("Sampled features L8:", point_features_8.shape)  # [B, 2048, 1024]
-
-        point_features = torch.cat([point_features_32, point_features_16, point_features_8], dim=2)
-        # print("Concatenated point features:", point_features.shape) # [B, 2048, 1792]
+        point_features_16 = self.feature_sampling(sampled_sparse_cloud, pt_features_16_r).flatten(start_dim=2)
+        # print("Sampled features 16:", point_features_16.shape) # [B, 2048, 2048]
+        point_features_32 = self.feature_sampling(sampled_sparse_cloud, pt_features_32_r).flatten(start_dim=2)
+        # print("Sampled features 32:", point_features_32.shape) # [B, 2048, 1024]
+        point_features_64 = self.feature_sampling(sampled_sparse_cloud, pt_features_64_r).flatten(start_dim=2)
+        # print("Sampled features 64:", point_features_64.shape)  # [B, 2048, 512]
+        point_features_128 = self.feature_sampling(sampled_sparse_cloud, pt_features_128_r).flatten(start_dim=2)
+        # print("Sampled features 128:", point_features_128.shape)  # [B, 2048, 256]
+        point_features_256 = self.feature_sampling(sampled_sparse_cloud, pt_features_xyz_r).flatten(start_dim=2)
+        # print("Sampled features 256:", point_features_256.shape)  # [B, 2048, 8]
+        
+        point_features = torch.cat([point_features_16, point_features_32, point_features_64, point_features_128, point_features_256], dim=2)
+        # print("Concatenated point features:", point_features.shape) # [B, 2048, 3848]
 
         point_features = self.fc11(point_features)
-        # print(point_features.size())    # torch.Size([B, 2048, 1792])
+        # print(point_features.size())    # torch.Size([B, 2048, 1924])
         point_features = self.fc12(point_features)
-        # print(point_features.size())    # torch.Size([B, 2048, 448])
+        # print(point_features.size())    # torch.Size([B, 2048, 962])
         point_features = self.fc13(point_features)
+        # print(point_features.size())    # torch.Size([B, 2048, 481])
+        point_features = self.fc14(point_features)
         # print(point_features.size())    # torch.Size([B, 2048, 112])
 
         # Calculate point offsets (8 offsets per sampled point)
-        point_offset = self.fc14(point_features).view(-1, self.n_dense_points, 3) # Reshape (B, 2048, 24) -> (B, 16384, 3)
+        point_offset = self.fc15(point_features).view(-1, self.n_dense_points, 3) # Reshape (B, 2048, 24) -> (B, 16384, 3)
         # print(point_offset.size())    # torch.Size([B, 16384, 3])
 
         # Create dense cloud by repeating sampled points and adding offsets
