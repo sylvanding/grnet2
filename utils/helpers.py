@@ -41,7 +41,7 @@ def get_ptcloud_img(ptcloud):
     fig = plt.figure(figsize=(12, 12))
 
     x, y, z = ptcloud.transpose(1,0) # 3, 2048
-    ax = fig.gca(projection=Axes3D.name, adjustable='box')
+    ax = fig.add_subplot(111, projection=Axes3D.name, adjustable='box')
     # ax = fig.gca(projection=Axes3D.name)
     ax.axis('off')
     ax.set_box_aspect([1,1,1]) # 替代 ax.axis('scaled') or ax.axis('auto')

@@ -49,9 +49,9 @@ git clone https://github.com/hzxie/GRNet.git
 
 ```
 cd GRNet
-conda create -n grnet python=3.7 -y
+conda create -n grnet python=3.8 -y
 conda activate grnet
-pip install torch==1.7.1+cu110 torchvision==0.8.2+cu110 -f https://download.pytorch.org/whl/torch_stable.html
+pip install torch==1.9.1+cu111 torchvision==0.10.1+cu111 -f https://download.pytorch.org/whl/torch_stable.html
 pip install -r requirements.txt
 ```
 

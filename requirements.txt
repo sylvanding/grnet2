@@ -1,13 +1,23 @@
 argparse
 easydict
 h5py
-matplotlib>=3.0.3
+matplotlib==3.7.1
 numpy
 open3d==0.15.2
 opencv-python
 pyexr
 scipy
 tensorboardX==1.9
-transforms3d
+transforms3d>=0.3.1
 tqdm
 protobuf==3.20.*
+pillow==9.5.0
+
+# PUDM
+einops
+termcolor
+msgpack-numpy
+lmdb
+hydra-core==0.11.3
+pytorch-lightning==0.7.1
+fvcore

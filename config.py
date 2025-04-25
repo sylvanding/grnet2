@@ -72,22 +72,22 @@ __C.NETWORK                                      = edict()
 __C.NETWORK.N_SAMPLING_POINTS                    = 2048
 __C.NETWORK.GRIDDING_LOSS_SCALES_SPARSE          = [(128, 128, 16)]
 __C.NETWORK.GRIDDING_LOSS_ALPHAS_SPARSE          = [0.1]
-__C.NETWORK.GRIDDING_LOSS_SCALES_DENSE           = [(256, 256, 32), (128, 128, 16)]
-__C.NETWORK.GRIDDING_LOSS_ALPHAS_DENSE           = [0.2, 0.1]
+__C.NETWORK.GRIDDING_LOSS_SCALES_DENSE           = [(128, 128, 32), (64, 64, 16), (32, 32, 8)]
+__C.NETWORK.GRIDDING_LOSS_ALPHAS_DENSE           = [0.3, 0.3, 0.3]
 
 #
 # Train
 #
 __C.TRAIN                                        = edict()
-__C.TRAIN.BATCH_SIZE                             = 1
+__C.TRAIN.BATCH_SIZE                             = 4
 __C.TRAIN.N_EPOCHS                               = 400
 __C.TRAIN.SAVE_FREQ                              = 50
 __C.TRAIN.LEARNING_RATE                          = 1e-5
-__C.TRAIN.LR_MILESTONES                          = [100, 150, 200, 250, 300]
-__C.TRAIN.GAMMA                                  = .4
+__C.TRAIN.LR_MILESTONES                          = [200, 250, 300, 350]
+__C.TRAIN.GAMMA                                  = .5
 __C.TRAIN.BETAS                                  = (.9, .999)
 __C.TRAIN.WEIGHT_DECAY                           = 1e-4
-__C.TRAIN.LOCAL                                  = True
+__C.TRAIN.LOCAL                                  = False
 __C.TRAIN.is_random_sample                       = False
 __C.TRAIN.is_fine_tune                           = False
 __C.TRAIN.transforms                             = True
@@ -115,7 +115,7 @@ __C.TRAIN.transforms_params                      = [
 ]
 __C.TRAIN.using_original_data_for_dense_gridding = True
 __C.TRAIN.using_original_data_for_dense_chamfer  = True
-__C.TRAIN.noise_points_ratio                     = 0.1
+__C.TRAIN.noise_points_ratio                     = 0.0
 #
 # Test
 #

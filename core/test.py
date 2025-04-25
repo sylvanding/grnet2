@@ -7,13 +7,14 @@
 
 import logging
 import torch
-
+import torch.nn as nn
+from extensions.gridding import Gridding
 import utils.data_loaders
 import utils.helpers
 
 from extensions.chamfer_dist import ChamferDistance
 from extensions.gridding_loss import GriddingLoss
-from models.grnet import GRNet
+from models.grnet_2 import GRNet_2
 from utils.average_meter import AverageMeter
 from utils.metrics import Metrics
 from tqdm import tqdm
@@ -35,7 +36,7 @@ def test_net(cfg, epoch_idx=-1, test_data_loader=None, test_writer=None, grnet=N
 
     # Setup networks and initialize networks
     if grnet is None:
-        grnet = GRNet(cfg)
+        grnet = GRNet_2(cfg)
 
         if torch.cuda.is_available():
             grnet = torch.nn.DataParallel(grnet).cuda()
@@ -49,17 +50,20 @@ def test_net(cfg, epoch_idx=-1, test_data_loader=None, test_writer=None, grnet=N
 
     # Set up loss functions
     chamfer_dist = ChamferDistance()
-    gridding_loss_sparse = GriddingLoss(
-        scales=cfg.NETWORK.GRIDDING_LOSS_SCALES_SPARSE,
-        alphas=cfg.NETWORK.GRIDDING_LOSS_ALPHAS_SPARSE)
+    # gridding_loss_sparse = GriddingLoss(
+    #     scales=cfg.NETWORK.GRIDDING_LOSS_SCALES_SPARSE,
+    #     alphas=cfg.NETWORK.GRIDDING_LOSS_ALPHAS_SPARSE)
     gridding_loss_dense = GriddingLoss(
         scales=cfg.NETWORK.GRIDDING_LOSS_SCALES_DENSE,
         alphas=cfg.NETWORK.GRIDDING_LOSS_ALPHAS_DENSE)
     
+    l1_loss = nn.L1Loss()
+    gridding_scales = (128, 128, 32)
+    gridding = Gridding(scales=gridding_scales)
 
     # Testing loop
     n_samples = len(test_data_loader)
-    test_losses = AverageMeter(['SparseLoss', 'DenseLoss'])
+    test_losses = AverageMeter(['ChamferDist', 'GriddingLoss', 'L1_3d_unet_recon_grid'])
     test_metrics = AverageMeter(Metrics.names())
     category_metrics = dict()
 
@@ -74,23 +78,14 @@ def test_net(cfg, epoch_idx=-1, test_data_loader=None, test_writer=None, grnet=N
                     continue
                 data[k] = utils.helpers.var_or_cuda(v)
 
-            sparse_ptcloud, dense_ptcloud = grnet(data)
-            if 'gridding_loss_sparse_ratio' in kwargs and 'gridding_loss_dense_ratio' in kwargs:
-                sparse_loss = (1-kwargs['gridding_loss_sparse_ratio']) * chamfer_dist(sparse_ptcloud, data['gtcloud']) + kwargs['gridding_loss_sparse_ratio'] * gridding_loss_sparse(sparse_ptcloud,data['gtcloud'])
-                if cfg.TRAIN.using_original_data_for_dense_gridding:
-                    _gridding_loss_dense = gridding_loss_dense(dense_ptcloud,data['original_cloud'])
-                else:
-                    _gridding_loss_dense = gridding_loss_dense(dense_ptcloud,data['gtcloud'])
-                if cfg.TRAIN.using_original_data_for_dense_chamfer:
-                    _chamfer_dist = chamfer_dist(dense_ptcloud, data['original_cloud'])
-                else:
-                    _chamfer_dist = chamfer_dist(dense_ptcloud, data['gtcloud'])
-                dense_loss = (1-kwargs['gridding_loss_dense_ratio']) * _chamfer_dist + kwargs['gridding_loss_dense_ratio'] * _gridding_loss_dense
-            else:
-                sparse_loss = chamfer_dist(sparse_ptcloud, data['gtcloud'])
-                dense_loss = chamfer_dist(dense_ptcloud, data['gtcloud'])
-            test_losses.update([sparse_loss.item() * 1000, dense_loss.item() * 1000])
-            _metrics = Metrics.get(dense_ptcloud, data['gtcloud'])
+            dense_cloud_interp, dense_cloud_pred, pt_features_xyz_r = grnet(data)
+            _loss_chamfer_dist = chamfer_dist(dense_cloud_pred, data['gtcloud'])
+            _loss_gridding_loss = gridding_loss_dense(dense_cloud_pred, data['gtcloud'])
+            gridding_gt = gridding(data['gtcloud']).view(-1, 1, *gridding_scales)
+            _loss_l1_3d_unet_recon_grid = l1_loss(pt_features_xyz_r, gridding_gt)
+            _loss = 0.4 * _loss_chamfer_dist + 0.4 * _loss_gridding_loss + 0.2 * _loss_l1_3d_unet_recon_grid
+            test_losses.update([_loss_chamfer_dist.item() * 1000, _loss_gridding_loss.item() * 1000, _loss_l1_3d_unet_recon_grid.item() * 1000])
+            _metrics = Metrics.get(dense_cloud_pred, data['gtcloud'])
             test_metrics.update(_metrics)
 
             # if taxonomy_id not in category_metrics:
@@ -103,12 +98,12 @@ def test_net(cfg, epoch_idx=-1, test_data_loader=None, test_writer=None, grnet=N
                 input_pc = data['partial_cloud'].squeeze().cpu().numpy()
                 input_pc_img = utils.helpers.get_ptcloud_img(input_pc/scale)
                 test_writer.add_image('Model%02d/Input' % model_idx, input_pc_img, epoch_idx, dataformats='HWC')
-                sparse_ptcloud = sparse_ptcloud.squeeze().cpu().numpy()
-                sparse_ptcloud_img = utils.helpers.get_ptcloud_img(sparse_ptcloud/scale)
-                test_writer.add_image('Model%02d/SparseReconstruction' % model_idx, sparse_ptcloud_img, epoch_idx, dataformats='HWC')
-                dense_ptcloud = dense_ptcloud.squeeze().cpu().numpy()
-                dense_ptcloud_img = utils.helpers.get_ptcloud_img(dense_ptcloud/scale)
-                test_writer.add_image('Model%02d/DenseReconstruction' % model_idx, dense_ptcloud_img, epoch_idx, dataformats='HWC')
+                dense_cloud_interp = dense_cloud_interp.squeeze().cpu().numpy()
+                dense_cloud_interp_img = utils.helpers.get_ptcloud_img(dense_cloud_interp/scale)
+                test_writer.add_image('Model%02d/InterpReconstruction' % model_idx, dense_cloud_interp_img, epoch_idx, dataformats='HWC')
+                dense_cloud_pred = dense_cloud_pred.squeeze().cpu().numpy()
+                dense_cloud_pred_img = utils.helpers.get_ptcloud_img(dense_cloud_pred/scale)
+                test_writer.add_image('Model%02d/DensePredReconstruction' % model_idx, dense_cloud_pred_img, epoch_idx, dataformats='HWC')
                 gt_ptcloud = data['gtcloud'].squeeze().cpu().numpy()
                 gt_ptcloud_img = utils.helpers.get_ptcloud_img(gt_ptcloud/scale)
                 test_writer.add_image('Model%02d/GroundTruth' % model_idx, gt_ptcloud_img, epoch_idx, dataformats='HWC')
@@ -143,8 +138,9 @@ def test_net(cfg, epoch_idx=-1, test_data_loader=None, test_writer=None, grnet=N
 
     # Add testing results to TensorBoard
     if test_writer is not None:
-        test_writer.add_scalar('Loss/Epoch/Sparse', test_losses.avg(0), epoch_idx)
-        test_writer.add_scalar('Loss/Epoch/Dense', test_losses.avg(1), epoch_idx)
+        test_writer.add_scalar('Loss/Epoch/ChamferDist', test_losses.avg(0), epoch_idx)
+        test_writer.add_scalar('Loss/Epoch/GriddingLoss', test_losses.avg(1), epoch_idx)
+        test_writer.add_scalar('Loss/Epoch/L1_3d_unet_recon_grid', test_losses.avg(2), epoch_idx)
         for i, metric in enumerate(test_metrics.items):
             test_writer.add_scalar('Metric/%s' % metric, test_metrics.avg(i), epoch_idx)
 

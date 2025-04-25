@@ -112,3 +112,5 @@ output/
 datasets/
 checkpoints/
 
+# custom
+*.tar.bz2

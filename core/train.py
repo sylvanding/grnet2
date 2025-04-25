@@ -8,18 +8,21 @@
 import logging
 import os
 import torch
+import torch.nn as nn
 
 import utils.data_loaders
 import utils.helpers
+
 
 from datetime import datetime
 from time import time
 from tensorboardX import SummaryWriter
 
 from core.test import test_net
+from extensions.gridding import Gridding
 from extensions.chamfer_dist import ChamferDistance
 from extensions.gridding_loss import GriddingLoss
-from models.grnet import GRNet
+from models.grnet_2 import GRNet_2
 from utils.average_meter import AverageMeter
 from utils.metrics import Metrics
 from tqdm import tqdm
@@ -72,7 +75,7 @@ def train_net(cfg):
     val_writer = SummaryWriter(os.path.join(cfg.DIR.LOGS, 'test'))
 
     # Create the networks
-    grnet = GRNet(cfg)
+    grnet = GRNet_2(cfg)
     grnet.apply(utils.helpers.init_weights)
     logging.debug('Parameters in GRNet: %d.' % utils.helpers.count_parameters(grnet))
 
@@ -91,12 +94,15 @@ def train_net(cfg):
 
     # Set up loss functions
     chamfer_dist = ChamferDistance()
-    gridding_loss_sparse = GriddingLoss(
-        scales=cfg.NETWORK.GRIDDING_LOSS_SCALES_SPARSE,
-        alphas=cfg.NETWORK.GRIDDING_LOSS_ALPHAS_SPARSE)
+    # gridding_loss_sparse = GriddingLoss(
+    #     scales=cfg.NETWORK.GRIDDING_LOSS_SCALES_SPARSE,
+    #     alphas=cfg.NETWORK.GRIDDING_LOSS_ALPHAS_SPARSE)
     gridding_loss_dense = GriddingLoss(
         scales=cfg.NETWORK.GRIDDING_LOSS_SCALES_DENSE,
         alphas=cfg.NETWORK.GRIDDING_LOSS_ALPHAS_DENSE)
+    gridding_scales = (128, 128, 32)
+    gridding = Gridding(scales=gridding_scales)
+    l1_loss = nn.L1Loss()
 
     # Load pretrained model if exists
     init_epoch = 0
@@ -129,7 +135,7 @@ def train_net(cfg):
 
         batch_time = AverageMeter()
         data_time = AverageMeter()
-        losses = AverageMeter(['SparseLoss', 'DenseLoss'])
+        losses = AverageMeter(['ChamferDist', 'GriddingLoss', 'L1_3d_unet_recon_grid'])
 
         grnet.train()
 
@@ -140,34 +146,24 @@ def train_net(cfg):
             for k, v in data.items():
                 data[k] = utils.helpers.var_or_cuda(v)
 
-            sparse_ptcloud, dense_ptcloud = grnet(data)
-            if cfg.TRAIN.is_fine_tune:
-                raise NotImplementedError('Fine-tuning is not implemented yet.')
-                sparse_loss = 0.8 * chamfer_dist(sparse_ptcloud, data['gtcloud']) + 0.2 * gridding_loss_sparse(sparse_ptcloud,
-                                                                                           data['gtcloud'])
-                dense_loss = chamfer_dist(dense_ptcloud, data['gtcloud']) + 0.2 * gridding_loss_dense(dense_ptcloud,
-                                                                                           data['gtcloud'])
-            else:
-                sparse_loss = (1-gridding_loss_sparse_ratio) * chamfer_dist(sparse_ptcloud, data['gtcloud']) + gridding_loss_sparse_ratio * gridding_loss_sparse(sparse_ptcloud,data['gtcloud'])
-                if cfg.TRAIN.using_original_data_for_dense_gridding:
-                    _gridding_loss_dense = gridding_loss_dense(dense_ptcloud,data['original_cloud'])
-                else:
-                    _gridding_loss_dense = gridding_loss_dense(dense_ptcloud,data['gtcloud'])
-                if cfg.TRAIN.using_original_data_for_dense_chamfer:
-                    _chamfer_dist = chamfer_dist(dense_ptcloud, data['original_cloud'])
-                else:
-                    _chamfer_dist = chamfer_dist(dense_ptcloud, data['gtcloud'])
-                dense_loss = (1-gridding_loss_dense_ratio) * _chamfer_dist + gridding_loss_dense_ratio * _gridding_loss_dense
-            _loss = (sparse_loss + alpha*dense_loss)/(1+alpha)
-            losses.update([sparse_loss.item() * 1000, dense_loss.item() * 1000])
+            dense_cloud_interp, dense_cloud_pred, pt_features_xyz_r = grnet(data)
+
+            gridding_gt = gridding(data['gtcloud']).view(-1, 1, *gridding_scales)
+            _loss_l1_3d_unet_recon_grid = l1_loss(pt_features_xyz_r, gridding_gt)
+
+            _loss_chamfer_dist = chamfer_dist(dense_cloud_pred, data['gtcloud'])
+            _loss_gridding_loss = gridding_loss_dense(dense_cloud_pred, data['gtcloud'])
+            _loss = 0.4 * _loss_chamfer_dist + 0.4 * _loss_gridding_loss + 0.2 * _loss_l1_3d_unet_recon_grid
+            losses.update([_loss_chamfer_dist.item() * 1000, _loss_gridding_loss.item() * 1000, _loss_l1_3d_unet_recon_grid.item() * 1000])
 
             grnet.zero_grad()
             _loss.backward()
             grnet_optimizer.step()
 
             n_itr = (epoch_idx - 1) * n_batches + batch_idx
-            train_writer.add_scalar('Loss/Batch/Sparse', sparse_loss.item() * 1000, n_itr)
-            train_writer.add_scalar('Loss/Batch/Dense', dense_loss.item() * 1000, n_itr)
+            train_writer.add_scalar('Loss/Batch/ChamferDist', _loss_chamfer_dist.item() * 1000, n_itr)
+            train_writer.add_scalar('Loss/Batch/GriddingLoss', _loss_gridding_loss.item() * 1000, n_itr)
+            train_writer.add_scalar('Loss/Batch/L1_3d_unet_recon_grid', _loss_l1_3d_unet_recon_grid.item() * 1000, n_itr)
 
             batch_time.update(time() - batch_end_time)
             batch_end_time = time()
@@ -177,8 +173,9 @@ def train_net(cfg):
 
         grnet_lr_scheduler.step()
         epoch_end_time = time()
-        train_writer.add_scalar('Loss/Epoch/Sparse', losses.avg(0), epoch_idx)
-        train_writer.add_scalar('Loss/Epoch/Dense', losses.avg(1), epoch_idx)
+        train_writer.add_scalar('Loss/Epoch/ChamferDist', losses.avg(0), epoch_idx)
+        train_writer.add_scalar('Loss/Epoch/GriddingLoss', losses.avg(1), epoch_idx)
+        train_writer.add_scalar('Loss/Epoch/L1_3d_unet_recon_grid', losses.avg(2), epoch_idx)
         train_writer.add_scalar('Loss/Epoch/LR', grnet_optimizer.param_groups[0]['lr'], epoch_idx)
         logging.info(
             '[Epoch %d/%d] EpochTime = %.3f (s) Losses = %s' %
