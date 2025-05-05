@@ -92,6 +92,7 @@ class SMLMDataLoader(torch.utils.data.dataset.Dataset):
         assert split in ["train", "valid", "test", "test-exp"], "split error value!"
 
         self.dataroot = cfg.DATASETS.SMLM.ROOT_DIR
+        self.dataset_name = cfg.DATASETS.SMLM.DATASET_NAME
         self.split = split
         self.local = cfg.TRAIN.LOCAL
         self.is_scale_z = cfg.DATASETS.SMLM.is_scale_z
@@ -107,7 +108,7 @@ class SMLMDataLoader(torch.utils.data.dataset.Dataset):
             "remote": {"train": [0, 1000], "valid": [1000, 1024], "test": [1001, 1002], "test-exp": [0, 1]},
         }
         if self.split != "test-exp":
-            h5_file_path = os.path.join(self.dataroot, "train", "smlm_pc_v4.h5")
+            h5_file_path = os.path.join(self.dataroot, self.dataset_name)
         else:
             h5_file_path = os.path.join("datasets/region_x0_y0_z1_2048_16384_norm.h5")
 

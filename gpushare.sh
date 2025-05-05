@@ -11,7 +11,7 @@
 # pip install torch==1.9.1+cu111 torchvision==0.10.1+cu111 -f https://download.pytorch.org/whl/torch_stable.html
 
 # cd /hy-tmp
-# git clone --depth=1 -b scaled_3d_conv https://github.com/sylvanding/grnet2 .
+# git clone --depth=1 -b main https://github.com/sylvanding/grnet2 .
 # chmod +x gpushare.sh
 # oss login
 # oss cp oss://smlm_pc.tar .
