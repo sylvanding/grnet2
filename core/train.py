@@ -84,7 +84,7 @@ def train_net(cfg):
         grnet = torch.nn.DataParallel(grnet).cuda()
 
     # Create the optimizers
-    grnet_optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, grnet.parameters()),
+    grnet_optimizer = torch.optim.AdamW(filter(lambda p: p.requires_grad, grnet.parameters()),
                                        lr=cfg.TRAIN.LEARNING_RATE,
                                        weight_decay=cfg.TRAIN.WEIGHT_DECAY,
                                        betas=cfg.TRAIN.BETAS)
