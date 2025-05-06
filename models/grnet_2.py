@@ -14,6 +14,36 @@ from extensions.cubic_feature_sampling import CubicFeatureSampling
 from models.pointnet2_utils import PointNetSetAbstraction, PointNetFeaturePropagation
 
 
+class AttentionGate3D(nn.Module):
+    def __init__(self, F_g, F_x, F_int):
+        super(AttentionGate3D, self).__init__()
+        self.W_g = nn.Sequential(
+            nn.Conv3d(F_g, F_int, kernel_size=1, stride=1, padding=0, bias=True),
+            nn.BatchNorm3d(F_int)
+        )
+        self.W_x = nn.Sequential(
+            nn.Conv3d(F_x, F_int, kernel_size=1, stride=1, padding=0, bias=True),
+            nn.BatchNorm3d(F_int)
+        )
+        self.psi = nn.Sequential(
+            nn.Conv3d(F_int, 1, kernel_size=1, stride=1, padding=0, bias=True),
+            nn.BatchNorm3d(1),
+            nn.Sigmoid()
+        )
+        self.leaky_relu = nn.LeakyReLU(0.01, inplace=True)
+
+    def forward(self, g, x):
+        """
+        g: Gating signal from the previous layer (decoder upsampled)
+        x: Skip connection from the encoder
+        """
+        g1 = self.W_g(g)
+        x1 = self.W_x(x)
+        psi_input = self.leaky_relu(g1 + x1)
+        alpha = self.psi(psi_input)
+        return x * alpha
+
+
 class PointNet2FeatureExtractor(nn.Module):
     def __init__(self):
         super(PointNet2FeatureExtractor, self).__init__()
@@ -175,6 +205,14 @@ class GRNet_2(torch.nn.Module):
             torch.nn.LeakyReLU(0.01),
         )
 
+        # Attention Gates
+        # F_g: channels of gating signal (from decoder), F_x: channels of skip connection (from encoder)
+        # F_int is typically F_x // 2 or F_g // 2
+        self.att7 = AttentionGate3D(F_g=128, F_x=128, F_int=64)  # For dconv7 output and pt_features_16
+        self.att8 = AttentionGate3D(F_g=64, F_x=64, F_int=32)    # For dconv8 output and pt_features_32
+        self.att9 = AttentionGate3D(F_g=32, F_x=32, F_int=16)    # For dconv9 output and pt_features_64
+        self.att10 = AttentionGate3D(F_g=1, F_x=1, F_int=1)     # For dconv10 output and pt_features_xyz_l
+
         # --- Final Layers ---
         # self.gridding_rev = GriddingReverse(scales=self.gridding_scales)
         # self.point_sampling = RandomPointSampling(n_points=2048)
@@ -246,21 +284,24 @@ class GRNet_2(torch.nn.Module):
         # print("After fc6 + skip:", pt_features_8_r.shape) # [B, 256, 8, 8, 2]
 
         # --- Decoder ---
-        pt_features_16_r = (
-            self.dconv7(pt_features_8_r) + pt_features_16
-        )  # Input skip from conv3 output
+        d7_out = self.dconv7(pt_features_8_r)
+        pt_features_16_att = self.att7(g=d7_out, x=pt_features_16)
+        pt_features_16_r = d7_out + pt_features_16_att
         # print("After dconv7 + skip:", pt_features_16_r.shape) # [B, 128, 16, 16, 4]
-        pt_features_32_r = (
-            self.dconv8(pt_features_16_r) + pt_features_32
-        )  # Input skip from conv2 output
+
+        d8_out = self.dconv8(pt_features_16_r)
+        pt_features_32_att = self.att8(g=d8_out, x=pt_features_32)
+        pt_features_32_r = d8_out + pt_features_32_att
         # print("After dconv8 + skip:", pt_features_32_r.shape) # [B, 64, 32, 32, 8]
-        pt_features_64_r = (
-            self.dconv9(pt_features_32_r) + pt_features_64
-        )  # Input skip from conv1 output
+
+        d9_out = self.dconv9(pt_features_32_r)
+        pt_features_64_att = self.att9(g=d9_out, x=pt_features_64)
+        pt_features_64_r = d9_out + pt_features_64_att
         # print("After dconv9 + skip:", pt_features_64_r.shape) # [B, 32, 64, 64, 16]
-        pt_features_xyz_r = (
-            self.dconv10(pt_features_64_r) + pt_features_xyz_l
-        )  # Input skip from initial grid
+
+        d10_out = self.dconv10(pt_features_64_r)
+        pt_features_xyz_l_att = self.att10(g=d10_out, x=pt_features_xyz_l)
+        pt_features_xyz_r = d10_out + pt_features_xyz_l_att
         # print("Final grid features:", pt_features_xyz_r.shape) # [B, 1, 128, 128, 32]
 
         # # --- Reverse Gridding and Sampling ---
