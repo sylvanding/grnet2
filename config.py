@@ -6,6 +6,7 @@
 # @Email:  cshzxie@gmail.com
 
 from easydict import EasyDict as edict
+import numpy as np
 
 __C                                              = edict()
 cfg                                              = __C
@@ -89,7 +90,7 @@ __C.TRAIN.GAMMA                                  = .5
 __C.TRAIN.BETAS                                  = (.9, .999)
 __C.TRAIN.WEIGHT_DECAY                           = 1e-4
 __C.TRAIN.LOCAL                                  = True
-__C.TRAIN.is_random_sample                       = False
+__C.TRAIN.is_random_sample                       = True
 __C.TRAIN.is_fine_tune                           = False
 __C.TRAIN.transforms                             = True
 __C.TRAIN.transforms_params                      = [
@@ -105,13 +106,13 @@ __C.TRAIN.transforms_params                      = [
         },
         "objects": ["partial_cloud", "gtcloud", "original_cloud"],
     },
-    # {
-    #     'callback': 'RandomRotatePoints',
-    #     'parameters': {
-    #         'angle': np.pi
-    #     },
-    #     'objects': ['partial_cloud', 'gtcloud', 'original_cloud']
-    # },
+    {
+        'callback': 'RandomRotatePoints',
+        'parameters': {
+            'angle': np.pi
+        },
+        'objects': ['partial_cloud', 'gtcloud', 'original_cloud']
+    },
     {"callback": "ToTensor", "objects": ["partial_cloud", "gtcloud", "original_cloud"]},
 ]
 __C.TRAIN.using_original_data_for_dense_gridding = True
