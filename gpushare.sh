@@ -14,9 +14,9 @@
 # git clone --depth=1 -b main https://github.com/sylvanding/grnet2 .
 # chmod +x gpushare.sh
 # oss login
-# oss cp oss://smlm_pc.tar .
+# oss cp oss://mt_pc_16384_2048_10_15_5.5.tar .
 
-tar -xvf smlm_pc.tar # set the data path in the config file
+tar -xvf mt_pc_16384_2048_10_15_5.5.tar # set the data path in the config file
 
 # install opencv
 sudo apt-get install -y libopencv-dev python3-opencv libpng-dev libjpeg-dev libtiff-dev
@@ -24,13 +24,22 @@ sudo apt-get install -y libavcodec-dev libavformat-dev libswscale-dev libv4l-dev
 
 pip install -r requirements.txt
 
-# pytorch3d
-wget https://anaconda.org/pytorch3d/pytorch3d/0.6.1/download/linux-64/pytorch3d-0.6.1-py38_cu111_pyt191.tar.bz2
-conda install pytorch3d-0.6.1-py38_cu111_pyt191.tar.bz2 -y
+# pytorch3d - conda install the prebuilt version
+# wget https://anaconda.org/pytorch3d/pytorch3d/0.6.1/download/linux-64/pytorch3d-0.6.1-py38_cu111_pyt191.tar.bz2
+# conda install pytorch3d-0.6.1-py38_cu111_pyt191.tar.bz2 -y
+# python -c "import torch; import pytorch3d; print(torch.__version__, pytorch3d.__version__);"
+
+# pytorch3d - pip install from github and build from source
+/usr/bin/python3.8 -m pip install --upgrade pip
+git clone https://ghfast.top/https://github.com/facebookresearch/pytorch3d.git -b v0.6.1
+cd pytorch3d
+pip install .
+# pip install git+https://ghfast.top/https://github.com/facebookresearch/pytorch3d.git@v0.6.1 # proxy
+# pip install git+https://github.com/facebookresearch/pytorch3d.git@v0.6.1
 python -c "import torch; import pytorch3d; print(torch.__version__, pytorch3d.__version__);"
 
 # install extensions
-GRNET_HOME="/repos/GRNet2" # /hy-tmp
+GRNET_HOME="/hy-tmp" # /repos/GRNet2
 
 cd $GRNET_HOME/extensions/chamfer_dist
 python setup.py install
