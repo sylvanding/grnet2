@@ -149,12 +149,18 @@ def train_net(cfg):
             dense_cloud_interp, dense_cloud_pred, pt_features_xyz_r = grnet(data)
 
             gridding_gt = gridding(data['gtcloud']).view(-1, 1, *gridding_scales)
-            _loss_l1_3d_unet_recon_grid = l1_loss(pt_features_xyz_r, gridding_gt)
+            if cfg.NETWORK.USE_3D_UNET_RECON_GRID_L1_LOSS:
+                _loss_l1_3d_unet_recon_grid = l1_loss(pt_features_xyz_r, gridding_gt)
+            else:
+                _loss_l1_3d_unet_recon_grid = torch.tensor(0.0, device=pt_features_xyz_r.device)
 
             _loss_chamfer_dist = chamfer_dist(dense_cloud_pred, data['gtcloud'])
             _loss_gridding_loss = gridding_loss_dense(dense_cloud_pred, data['gtcloud'])
             _loss_chamfer_dist = cfg.TRAIN.cdloss_weight * _loss_chamfer_dist
-            _loss = 0.4 * _loss_chamfer_dist + 0.4 * _loss_gridding_loss + 0.2 * _loss_l1_3d_unet_recon_grid
+            if cfg.NETWORK.USE_3D_UNET_RECON_GRID_L1_LOSS:
+                _loss = 0.4 * _loss_chamfer_dist + 0.4 * _loss_gridding_loss + 0.2 * _loss_l1_3d_unet_recon_grid
+            else:
+                _loss = 0.5 * _loss_chamfer_dist + 0.5 * _loss_gridding_loss
             losses.update([_loss_chamfer_dist.item() * 1000, _loss_gridding_loss.item() * 1000, _loss_l1_3d_unet_recon_grid.item() * 1000])
 
             grnet.zero_grad()
