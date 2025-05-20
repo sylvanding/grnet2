@@ -63,7 +63,7 @@ def test_net(cfg, epoch_idx=-1, test_data_loader=None, test_writer=None, grnet=N
 
     # Testing loop
     n_samples = len(test_data_loader)
-    test_losses = AverageMeter(['ChamferDist', 'GriddingLoss', 'L1_3d_unet_recon_grid'])
+    test_losses = AverageMeter(['ChamferDist', 'GriddingLoss', 'L1_3d_unet_recon_grid', 'ClsLoss'])
     test_metrics = AverageMeter(Metrics.names())
     category_metrics = dict()
 
@@ -78,14 +78,17 @@ def test_net(cfg, epoch_idx=-1, test_data_loader=None, test_writer=None, grnet=N
                     continue
                 data[k] = utils.helpers.var_or_cuda(v)
 
-            dense_cloud_interp, dense_cloud_pred, pt_features_xyz_r = grnet(data)
+            dense_cloud_interp, dense_cloud_pred, pt_features_xyz_r, cls_features = grnet(data)
             _loss_chamfer_dist = chamfer_dist(dense_cloud_pred, data['gtcloud'])
             _loss_gridding_loss = gridding_loss_dense(dense_cloud_pred, data['gtcloud'])
             gridding_gt = gridding(data['gtcloud']).view(-1, 1, *gridding_scales)
             _loss_l1_3d_unet_recon_grid = l1_loss(pt_features_xyz_r, gridding_gt)
             _loss_chamfer_dist = cfg.TRAIN.cdloss_weight * _loss_chamfer_dist
-            _loss = 0.4 * _loss_chamfer_dist + 0.4 * _loss_gridding_loss + 0.2 * _loss_l1_3d_unet_recon_grid
-            test_losses.update([_loss_chamfer_dist.item() * 1000, _loss_gridding_loss.item() * 1000, _loss_l1_3d_unet_recon_grid.item() * 1000])
+            
+            _loss_cls = torch.nn.functional.cross_entropy(cls_features.view(-1, 2), data['partial_cloud_cls'].view(-1))
+            
+            _loss = 0.4 * _loss_chamfer_dist + 0.4 * _loss_gridding_loss + 0.2 * _loss_l1_3d_unet_recon_grid + 0.2 * _loss_cls
+            test_losses.update([_loss_chamfer_dist.item() * 1000, _loss_gridding_loss.item() * 1000, _loss_l1_3d_unet_recon_grid.item() * 1000, _loss_cls.item() * 1000])
             _metrics = Metrics.get(dense_cloud_pred, data['gtcloud'])
             test_metrics.update(_metrics)
 
@@ -142,6 +145,7 @@ def test_net(cfg, epoch_idx=-1, test_data_loader=None, test_writer=None, grnet=N
         test_writer.add_scalar('Loss/Epoch/ChamferDist', test_losses.avg(0), epoch_idx)
         test_writer.add_scalar('Loss/Epoch/GriddingLoss', test_losses.avg(1), epoch_idx)
         test_writer.add_scalar('Loss/Epoch/L1_3d_unet_recon_grid', test_losses.avg(2), epoch_idx)
+        test_writer.add_scalar('Loss/Epoch/ClsLoss', test_losses.avg(3), epoch_idx)
         for i, metric in enumerate(test_metrics.items):
             test_writer.add_scalar('Metric/%s' % metric, test_metrics.avg(i), epoch_idx)
 

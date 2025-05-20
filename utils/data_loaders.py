@@ -156,10 +156,10 @@ class SMLMDataLoader(torch.utils.data.dataset.Dataset):
             self.transforms = self._get_transforms(cfg, self.split)
         
         self.noise_points_ratio = cfg.TRAIN.noise_points_ratio
-        if self.split == "train" and self.noise_points_ratio > 0:
-            self.input_data = self._get_noise(self.input_data, self.noise_points_ratio)
         
-        print("noise added. input_data.shape:", self.input_data.shape)
+        if self.noise_points_ratio > 0:
+            print("noise added, noise_points_ratio:", self.noise_points_ratio)
+        
         print("max of input_data:", np.max(self.input_data,axis=(0,1)))
         print("min of input_data:", np.min(self.input_data,axis=(0,1)))
 
@@ -228,6 +228,57 @@ class SMLMDataLoader(torch.utils.data.dataset.Dataset):
                 
         return result_pc
 
+    def _get_partial_pc_with_noise(self, partial_pc, noise_points_ratio):
+        """
+        在部分点云上添加噪声点。
+        
+        参数:
+            partial_pc: 部分点云，形状为 (number of points, 3)
+            noise_points_ratio: 噪声点比例
+            
+        返回:
+            result_pc: 添加噪声点后的点云，形状为 (number of points + noise points, 3)
+            noise_cls: 噪声点分类标签，形状为 (number of points + noise points,)
+        """
+        if noise_points_ratio <= 0:
+            return partial_pc, np.zeros(partial_pc.shape[0], dtype=np.int64)
+        
+        # 获取点云形状
+        num_points = partial_pc.shape[0]
+        
+        # 计算要添加的噪声点数量
+        noise_points_count = int(num_points * noise_points_ratio)
+        
+        # 如果噪声点数量为0，直接返回原始点云
+        if noise_points_count == 0:
+            return partial_pc, np.zeros(num_points, dtype=np.int64)
+        
+        # 创建结果点云的副本
+        result_pc = np.copy(partial_pc)
+        
+        # 为点云生成随机噪声点
+        # 分别按照点云x,y,z轴的最大最小值来设置噪声点的范围
+        pc_min = np.min(partial_pc, axis=0)  # 获取x,y,z三个维度的最小值
+        pc_max = np.max(partial_pc, axis=0)  # 获取x,y,z三个维度的最大值
+        
+        # 在每个维度的范围内分别随机生成噪声点坐标
+        noise_points = np.zeros((noise_points_count, 3))
+        for dim in range(3):  # 分别处理x,y,z三个维度
+            noise_points[:, dim] = np.random.uniform(
+                low=pc_min[dim],
+                high=pc_max[dim],
+                size=noise_points_count
+            )
+        
+        # 将原始点与噪声点合并
+        result_pc = np.vstack([result_pc, noise_points])
+        
+        # 创建噪声分类标签，原始点为0，噪声点为1
+        noise_cls = np.zeros(result_pc.shape[0], dtype=np.int64)
+        noise_cls[:num_points] = 1
+        
+        return result_pc, noise_cls
+
     def __getitem__(self, index):
         result = {}
         partial_pc = copy.deepcopy(self.input_data[index])
@@ -239,6 +290,11 @@ class SMLMDataLoader(torch.utils.data.dataset.Dataset):
             result['partial_cloud'] = partial_pc
             result['gtcloud'] = complete_pc
             # result['original_cloud'] = original_pc
+            # add noise, the class of noise is 1
+            result['partial_cloud'], result['partial_cloud_cls'] = self._get_partial_pc_with_noise(result['partial_cloud'], self.noise_points_ratio)
+            result['partial_cloud'] = result['partial_cloud'].astype(np.float32)
+            # result['partial_cloud'].shape = (number of points + noise points, 3)
+            # result['partial_cloud_cls'].shape = (number of points + noise points,)
             if self.split == "train":
                 # augment
                 if self.transforms is not None:

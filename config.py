@@ -31,7 +31,7 @@ __C.DATASETS.KITTI.PARTIAL_POINTS_PATH           = '/home/SENSETIME/xiehaozhe/Da
 __C.DATASETS.KITTI.BOUNDING_BOX_FILE_PATH        = '/home/SENSETIME/xiehaozhe/Datasets/KITTI/bboxes/%s.txt'
 __C.DATASETS.SMLM                                = edict()
 __C.DATASETS.SMLM.ROOT_DIR                       = '/repos/datasets/smlm_pc'
-__C.DATASETS.SMLM.DATASET_NAME                   = 'mt_pc_16384_2048_10_15_5.5.h5'
+__C.DATASETS.SMLM.DATASET_NAME                   = 'mito_pc_16384_2048.h5'
 __C.DATASETS.SMLM.is_scale_z                     = True
 __C.DATASETS.SMLM.is_scale_half                  = False
 __C.DATASETS.SMLM.scale                          = 0.9
@@ -89,7 +89,7 @@ __C.TRAIN.LR_MILESTONES                          = [500]
 __C.TRAIN.GAMMA                                  = .5
 __C.TRAIN.BETAS                                  = (.9, .999)
 __C.TRAIN.WEIGHT_DECAY                           = 1e-6
-__C.TRAIN.LOCAL                                  = True
+__C.TRAIN.LOCAL                                  = False
 __C.TRAIN.is_random_sample                       = True
 __C.TRAIN.is_fine_tune                           = False
 __C.TRAIN.transforms                             = True
@@ -117,8 +117,8 @@ __C.TRAIN.transforms_params                      = [
 ]
 __C.TRAIN.using_original_data_for_dense_gridding = True
 __C.TRAIN.using_original_data_for_dense_chamfer  = True
-__C.TRAIN.noise_points_ratio                     = 0.0
-__C.TRAIN.cdloss_weight                          = 100.0 # cfg.TRAIN.cdloss_weight * _loss_chamfer_dist
+__C.TRAIN.noise_points_ratio                     = 0.1
+__C.TRAIN.cdloss_weight                          = 10.0 # cfg.TRAIN.cdloss_weight * _loss_chamfer_dist
 #
 # Test
 #

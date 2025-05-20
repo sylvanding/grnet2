@@ -235,6 +235,13 @@ class GRNet_2(torch.nn.Module):
         self.fc12 = torch.nn.Sequential(torch.nn.Linear(962, 112), torch.nn.SiLU())
         # Output 24 values per point (8 offsets * 3 coords)
         self.fc13 = torch.nn.Linear(112, 24)
+        
+        self.cls_fc11 = torch.nn.Sequential(
+            torch.nn.Linear(concat_feat_size + 128, 481), torch.nn.SiLU()
+        )
+        self.cls_fc12 = torch.nn.Sequential(torch.nn.Linear(481, 56), torch.nn.SiLU())
+        self.cls_fc13 = torch.nn.Linear(56, 2)
+        
         self.n_dense_points = 16384  # 2048 * 8
 
     def forward(self, data):
@@ -250,7 +257,7 @@ class GRNet_2(torch.nn.Module):
         #     partial_cloud.permute(0, 2, 1), up_rate=8
         # ).permute(0, 2, 1)
         
-        dense_cloud_interp = partial_cloud.unsqueeze(dim=2).repeat(1, 1, 8, 1).view(-1, self.n_dense_points, 3).contiguous()
+        # dense_cloud_interp = partial_cloud.unsqueeze(dim=2).repeat(1, 1, 8, 1).view(-1, self.n_dense_points, 3).contiguous()
 
         partial_cloud_features = (
             self.pointnet2_feature_extractor(partial_cloud.permute(0, 2, 1).contiguous())
@@ -319,7 +326,7 @@ class GRNet_2(torch.nn.Module):
         point_features_8 = self.feature_sampling(
             partial_cloud, pt_features_8_r
         ).flatten(start_dim=2)
-        print("Sampled features 8:", point_features_8.shape) # [B, 2048, 2048]
+        # print("Sampled features 8:", point_features_8.shape) # [B, 2048, 2048]
         point_features_16 = self.feature_sampling(
             partial_cloud, pt_features_16_r
         ).flatten(start_dim=2)
@@ -350,6 +357,42 @@ class GRNet_2(torch.nn.Module):
         )
         # print("Concatenated point features:", point_features.shape) # [B, 2048, 3848]
 
+        cls_features = point_features
+        cls_features = self.cls_fc11(cls_features)
+        cls_features = self.cls_fc12(cls_features)
+        cls_features = self.cls_fc13(cls_features)
+        # cls_features.shape = [B, 2048+n, 2]
+        
+        # 根据cls_features对point_features进行过滤
+        # cls_features.shape = [B, 2048+n, 2]，选取不是噪声的概率最高的2048个点
+        probs = torch.softmax(cls_features, dim=2)  # 计算softmax概率
+        not_noise_probs = probs[:, :, 0]  # 不是噪声的概率
+        batch_size = point_features.size(0)
+        num_points_to_select = 2048
+        
+        # 对每个batch中的点按照不是噪声的概率排序，并选择前2048个点
+        # 使用一个明确的变量名来存储来自 topk 的原始索引
+        _, top_k_point_indices = torch.topk(not_noise_probs, k=num_points_to_select, dim=1, largest=True, sorted=False)
+        # top_k_point_indices.shape: [batch_size, num_points_to_select]
+        
+        # --- 修正 point_features 的 gather 操作 ---
+        # 准备 gather 操作所需的 index 张量
+        # 其形状应为 [batch_size, num_points_to_select, point_features.size(2)]
+        idx_for_pf_gather = top_k_point_indices.unsqueeze(2).expand(-1, -1, point_features.size(2))
+        point_features = torch.gather(point_features, 1, idx_for_pf_gather)
+        # point_features 现在形状为 [batch_size, num_points_to_select, point_features.size(2)]
+        
+        # --- 修正 partial_cloud 的 gather 操作 ---
+        # 使用相同的 top_k_point_indices 来过滤 partial_cloud
+        # 准备 gather 操作所需的 index 张量
+        # 其形状应为 [batch_size, num_points_to_select, partial_cloud.size(2)]
+        idx_for_pc_gather = top_k_point_indices.unsqueeze(2).expand(-1, -1, partial_cloud.size(2))
+        partial_cloud_filtered = torch.gather(partial_cloud, 1, idx_for_pc_gather)
+        # partial_cloud_filtered 现在形状为 [batch_size, num_points_to_select, partial_cloud.size(2)]
+        
+        # 更新dense_cloud_interp以使用过滤后的partial_cloud
+        dense_cloud_interp = partial_cloud_filtered.unsqueeze(dim=2).repeat(1, 1, 8, 1).view(-1, self.n_dense_points, 3).contiguous()
+        
         point_features = self.fc11(point_features)
         # print(point_features.size())    # torch.Size([B, 2048, 962])
         point_features = self.fc12(point_features)
@@ -368,7 +411,7 @@ class GRNet_2(torch.nn.Module):
         # dense_cloud_pred = dense_cloud_pred + dense_cloud_interp
 
         # Return sparse cloud (sampled) and dense cloud
-        return dense_cloud_interp, dense_cloud_pred, pt_features_xyz_r
+        return dense_cloud_interp, dense_cloud_pred, pt_features_xyz_r, cls_features
 
 
 if __name__ == "__main__":

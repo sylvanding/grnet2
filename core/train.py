@@ -9,6 +9,7 @@ import logging
 import os
 import torch
 import torch.nn as nn
+import torch.nn.functional
 
 import utils.data_loaders
 import utils.helpers
@@ -135,7 +136,7 @@ def train_net(cfg):
 
         batch_time = AverageMeter()
         data_time = AverageMeter()
-        losses = AverageMeter(['ChamferDist', 'GriddingLoss', 'L1_3d_unet_recon_grid'])
+        losses = AverageMeter(['ChamferDist', 'GriddingLoss', 'L1_3d_unet_recon_grid', 'ClsLoss'])
 
         grnet.train()
 
@@ -146,7 +147,7 @@ def train_net(cfg):
             for k, v in data.items():
                 data[k] = utils.helpers.var_or_cuda(v)
 
-            dense_cloud_interp, dense_cloud_pred, pt_features_xyz_r = grnet(data)
+            dense_cloud_interp, dense_cloud_pred, pt_features_xyz_r, cls_features = grnet(data)
 
             gridding_gt = gridding(data['gtcloud']).view(-1, 1, *gridding_scales)
             _loss_l1_3d_unet_recon_grid = l1_loss(pt_features_xyz_r, gridding_gt)
@@ -154,8 +155,11 @@ def train_net(cfg):
             _loss_chamfer_dist = chamfer_dist(dense_cloud_pred, data['gtcloud'])
             _loss_gridding_loss = gridding_loss_dense(dense_cloud_pred, data['gtcloud'])
             _loss_chamfer_dist = cfg.TRAIN.cdloss_weight * _loss_chamfer_dist
-            _loss = 0.4 * _loss_chamfer_dist + 0.4 * _loss_gridding_loss + 0.2 * _loss_l1_3d_unet_recon_grid
-            losses.update([_loss_chamfer_dist.item() * 1000, _loss_gridding_loss.item() * 1000, _loss_l1_3d_unet_recon_grid.item() * 1000])
+            
+            _loss_cls = torch.nn.functional.cross_entropy(cls_features.view(-1, 2), data['partial_cloud_cls'].view(-1))
+            
+            _loss = 0.4 * _loss_chamfer_dist + 0.4 * _loss_gridding_loss + 0.2 * _loss_l1_3d_unet_recon_grid + 0.2 * _loss_cls
+            losses.update([_loss_chamfer_dist.item() * 1000, _loss_gridding_loss.item() * 1000, _loss_l1_3d_unet_recon_grid.item() * 1000, _loss_cls.item() * 1000])
 
             grnet.zero_grad()
             _loss.backward()
@@ -165,6 +169,7 @@ def train_net(cfg):
             train_writer.add_scalar('Loss/Batch/ChamferDist', _loss_chamfer_dist.item() * 1000, n_itr)
             train_writer.add_scalar('Loss/Batch/GriddingLoss', _loss_gridding_loss.item() * 1000, n_itr)
             train_writer.add_scalar('Loss/Batch/L1_3d_unet_recon_grid', _loss_l1_3d_unet_recon_grid.item() * 1000, n_itr)
+            train_writer.add_scalar('Loss/Batch/ClsLoss', _loss_cls.item() * 1000, n_itr)
 
             batch_time.update(time() - batch_end_time)
             batch_end_time = time()
@@ -177,6 +182,7 @@ def train_net(cfg):
         train_writer.add_scalar('Loss/Epoch/ChamferDist', losses.avg(0), epoch_idx)
         train_writer.add_scalar('Loss/Epoch/GriddingLoss', losses.avg(1), epoch_idx)
         train_writer.add_scalar('Loss/Epoch/L1_3d_unet_recon_grid', losses.avg(2), epoch_idx)
+        train_writer.add_scalar('Loss/Epoch/ClsLoss', losses.avg(3), epoch_idx)
         train_writer.add_scalar('Loss/Epoch/LR', grnet_optimizer.param_groups[0]['lr'], epoch_idx)
         logging.info(
             '[Epoch %d/%d] EpochTime = %.3f (s) Losses = %s' %
