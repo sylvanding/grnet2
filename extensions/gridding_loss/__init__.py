@@ -18,38 +18,58 @@ class GriddingDistanceFunction(torch.autograd.Function):
         # ptcloud1, ptcloud2: assumed to be in range [-1, 1]
         scale_x, scale_y, scale_z = scales
 
-        # Define grid boundaries based on scales, centered around 0
-        # E.g., for scale_x=128, range is [-64, 63]
-        min_x = -float(scale_x // 2)
-        max_x = float(scale_x // 2 - 1) if scale_x > 0 else min_x
-        min_y = -float(scale_y // 2)
-        max_y = float(scale_y // 2 - 1) if scale_y > 0 else min_y
-        min_z = -float(scale_z // 2)
-        max_z = float(scale_z // 2 - 1) if scale_z > 0 else min_z
+        # Define grid boundaries. min_coord_dim is the coordinate of the "lower-left" corner
+        # of the cell with index 0. max_coord_dim is the coordinate of the "lower-left"
+        # corner of the cell with index (scale_dim - 1).
+        # This ensures that the grid length calculated in CUDA,
+        # roundf(max_coord_dim - min_coord_dim + 1), equals scale_dim.
+        min_coord_x = -float(scale_x // 2)
+        max_coord_x = min_coord_x + scale_x - 1.0
+        min_coord_y = -float(scale_y // 2)
+        max_coord_y = min_coord_y + scale_y - 1.0
+        min_coord_z = -float(scale_z // 2)
+        max_coord_z = min_coord_z + scale_z - 1.0
 
-        # Scale point clouds from [-1, 1] to grid coordinates [min, max]
-        # Formula: scaled = pt * (scale/2)
+        # Scale point clouds from [-1, 1] to grid coordinates
+        # Formula: scaled_coord = pt_coord * (scale_dim / 2.0)
+        # This results in scaled_coord range of [-scale_dim/2, scale_dim/2]
         scale_factors = torch.tensor([scale_x / 2.0, scale_y / 2.0, scale_z / 2.0],
                                       device=ptcloud1.device, dtype=ptcloud1.dtype)
         scaled_ptcloud1 = ptcloud1 * scale_factors.unsqueeze(0).unsqueeze(0)
         scaled_ptcloud2 = ptcloud2 * scale_factors.unsqueeze(0).unsqueeze(0)
 
-        # Clamp to grid boundaries? Might be necessary if points can slightly exceed [-1, 1]
-        # scaled_ptcloud1 = torch.max(torch.min(scaled_ptcloud1, scale_factors - 1e-6), -scale_factors + 1e-6)
-        # scaled_ptcloud2 = torch.max(torch.min(scaled_ptcloud2, scale_factors - 1e-6), -scale_factors + 1e-6)
+        # Clamp scaled coordinates. For floor(clamped_scaled_pt) to be in [min_coord, max_coord],
+        # clamped_scaled_pt must be in [min_coord, max_coord + 1.0 - epsilon).
+        epsilon = 1e-5  # Small epsilon for float precision
+
+        clamped_coords_list1 = []
+        for dim in range(3):
+            min_val = [min_coord_x, min_coord_y, min_coord_z][dim]
+            max_val = [max_coord_x, max_coord_y, max_coord_z][dim]
+            clamped_coords_list1.append(
+                torch.clamp(scaled_ptcloud1[..., dim], min=min_val, max=max_val + 1.0 - epsilon)
+            )
+        clamped_scaled_ptcloud1 = torch.stack(clamped_coords_list1, dim=-1)
+
+        clamped_coords_list2 = []
+        for dim in range(3):
+            min_val = [min_coord_x, min_coord_y, min_coord_z][dim]
+            max_val = [max_coord_x, max_coord_y, max_coord_z][dim]
+            clamped_coords_list2.append(
+                torch.clamp(scaled_ptcloud2[..., dim], min=min_val, max=max_val + 1.0 - epsilon)
+            )
+        clamped_scaled_ptcloud2 = torch.stack(clamped_coords_list2, dim=-1)
 
         # Call CUDA forward for both point clouds
         grid1, grid1_pt_weights, grid1_pt_indexes = gridding_distance.forward(
-            min_x, max_x, min_y, max_y, min_z, max_z, scaled_ptcloud1)
-        # grid1 shape should be (B, Dx*Dy*Dz)
+            min_coord_x, max_coord_x, min_coord_y, max_coord_y, min_coord_z, max_coord_z, clamped_scaled_ptcloud1) # Use new min/max and clamped points
 
         grid2, grid2_pt_weights, grid2_pt_indexes = gridding_distance.forward(
-            min_x, max_x, min_y, max_y, min_z, max_z, scaled_ptcloud2)
-        # grid2 shape should be (B, Dx*Dy*Dz)
+            min_coord_x, max_coord_x, min_coord_y, max_coord_y, min_coord_z, max_coord_z, clamped_scaled_ptcloud2) # Use new min/max and clamped points
 
         ctx.save_for_backward(grid1_pt_weights, grid1_pt_indexes, grid2_pt_weights, grid2_pt_indexes,
-                              scale_factors.unsqueeze(0).unsqueeze(0)) # Save scale_factors (B, N, 3 shape for broadcasting)
-        return grid1, grid2 # Return corrected shape
+                              scale_factors.unsqueeze(0).unsqueeze(0))
+        return grid1, grid2
 
     @staticmethod
     def backward(ctx, grad_grid1, grad_grid2):
@@ -72,8 +92,8 @@ class GriddingDistanceFunction(torch.autograd.Function):
 class GriddingDistance(torch.nn.Module):
     def __init__(self, scales=(64, 64, 64)): # Accept scales tuple
         super(GriddingDistance, self).__init__()
-        if not isinstance(scales, tuple) or len(scales) != 3:
-             raise ValueError("scales must be a tuple of 3 integers (Dx, Dy, Dz)")
+        if not (isinstance(scales, tuple) and len(scales) == 3 and all(isinstance(s, int) and s > 0 for s in scales)):
+             raise ValueError("scales must be a tuple of 3 positive integers (Dx, Dy, Dz)")
         self.scales = scales
 
     def forward(self, pred_cloud, gt_cloud):
