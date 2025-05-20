@@ -31,10 +31,11 @@ __C.DATASETS.KITTI.PARTIAL_POINTS_PATH           = '/home/SENSETIME/xiehaozhe/Da
 __C.DATASETS.KITTI.BOUNDING_BOX_FILE_PATH        = '/home/SENSETIME/xiehaozhe/Datasets/KITTI/bboxes/%s.txt'
 __C.DATASETS.SMLM                                = edict()
 __C.DATASETS.SMLM.ROOT_DIR                       = '/repos/datasets/smlm_pc'
-__C.DATASETS.SMLM.DATASET_NAME                   = 'mt_pc_16384_2048_10_15_5.5.h5'
+__C.DATASETS.SMLM.DATASET_NAME                   = 'mt_pc_131072_2048_30_40_5.5.h5'
 __C.DATASETS.SMLM.is_scale_z                     = True
 __C.DATASETS.SMLM.is_scale_half                  = False
 __C.DATASETS.SMLM.scale                          = 0.9
+__C.DATASETS.SMLM.N_POINTS                       = 16384*8
 
 #
 # Dataset
@@ -51,6 +52,8 @@ __C.CONST                                        = edict()
 __C.CONST.DEVICE                                 = '0'
 __C.CONST.NUM_WORKERS                            = 4
 __C.CONST.N_INPUT_POINTS                         = 2048
+__C.CONST.UPSAMPLE_RATIO                         = 8
+__C.CONST.N_OUTPUT_DENSE_POINTS                  = __C.CONST.N_INPUT_POINTS * __C.CONST.UPSAMPLE_RATIO
 
 #
 # Directories
@@ -81,7 +84,7 @@ __C.NETWORK.GRIDDING_LOSS_ALPHAS_DENSE           = [0.3, 0.3, 0.3]
 # Train
 #
 __C.TRAIN                                        = edict()
-__C.TRAIN.BATCH_SIZE                             = 4 # 1
+__C.TRAIN.BATCH_SIZE                             = 2 # 1
 __C.TRAIN.N_EPOCHS                               = 400
 __C.TRAIN.SAVE_FREQ                              = 100
 __C.TRAIN.LEARNING_RATE                          = 2e-5 # 1e-5
@@ -96,7 +99,7 @@ __C.TRAIN.transforms                             = True
 __C.TRAIN.transforms_params                      = [
     {
         "callback": "RandomMirrorPoints",
-        "objects": ["partial_cloud", "gtcloud", "original_cloud"],
+        "objects": ["partial_cloud", "gtcloud"],
     },
     {
         "callback": "RandomScalePoints",
@@ -104,14 +107,14 @@ __C.TRAIN.transforms_params                      = [
             "scale_low": 0.9,
             "scale_high": 1.05,
         },
-        "objects": ["partial_cloud", "gtcloud", "original_cloud"],
+        "objects": ["partial_cloud", "gtcloud"],
     },
     {
         'callback': 'RandomRotatePoints',
         'parameters': {
             'angle': np.pi
         },
-        'objects': ['partial_cloud', 'gtcloud', 'original_cloud']
+        'objects': ['partial_cloud', 'gtcloud']
     },
     {"callback": "ToTensor", "objects": ["partial_cloud", "gtcloud", "original_cloud"]},
 ]
@@ -124,3 +127,4 @@ __C.TRAIN.cdloss_weight                          = 100.0 # cfg.TRAIN.cdloss_weig
 #
 __C.TEST                                         = edict()
 __C.TEST.METRIC_NAME                             = 'ChamferDistance'
+__C.TEST.LOOP_UPSAMPLE                           = __C.DATASETS.SMLM.N_POINTS // __C.CONST.N_OUTPUT_DENSE_POINTS - 1

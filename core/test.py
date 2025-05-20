@@ -20,6 +20,66 @@ from utils.metrics import Metrics
 from tqdm import tqdm
 
 
+def _sample_points(pc, n_points):
+    """
+    Randomly sample n_points from the point cloud.
+    """
+    num_points_in_pool = pc.size(1)
+        
+    if num_points_in_pool == 0:
+        logging.warning("Sampling pool is empty during loop upsampling. Stopping loop.")
+        return None
+    if num_points_in_pool >= n_points:
+        indices = torch.randperm(num_points_in_pool, device=pc.device)[:n_points]
+        sampled_input_pc_loop = pc[:, indices, :]
+    else:
+        logging.warning(
+            f"Sampling pool size ({num_points_in_pool}) is less than N_INPUT_POINTS ({n_points}). "
+            f"Sampling with replacement."
+        )
+        indices = torch.randint(0, num_points_in_pool, (n_points,), device=pc.device)
+        sampled_input_pc_loop = pc[:, indices, :]
+
+    return sampled_input_pc_loop
+
+
+def _perform_loop_upsampling(grnet, original_input_pc_for_loop, initial_dense_cloud_pred, cfg):
+    """
+    Performs loop upsampling to refine the predicted dense point cloud.
+    """
+    if cfg.TEST.LOOP_UPSAMPLE <= 0:
+        return initial_dense_cloud_pred
+
+    current_dense_cloud_pred = initial_dense_cloud_pred.cpu()
+    
+    # Ensure original_input_pc_for_loop is on the correct device, same as predictions
+
+    N_INPUT_POINTS_loop = cfg.CONST.N_INPUT_POINTS
+    LOOP_UPSAMPLE_count_val = cfg.TEST.LOOP_UPSAMPLE
+
+    sampling_pool = original_input_pc_for_loop.cpu()
+
+    # logging.info(f"Starting loop upsampling for {LOOP_UPSAMPLE_count_val} iterations.")
+    for i in range(LOOP_UPSAMPLE_count_val):
+        # logging.info(f"Loop upsampling iteration {i + 1}/{LOOP_UPSAMPLE_count_val}")
+        
+        # 1. Merge current dense prediction and original input_pc for sampling
+        # Ensure devices are consistent for concatenation
+        sampling_pool = torch.cat((current_dense_cloud_pred, sampling_pool), dim=1).cpu()
+
+        # 2. Sample N_INPUT_POINTS from the merged cloud
+        sampled_input_pc_loop = _sample_points(sampling_pool, N_INPUT_POINTS_loop)
+
+        # 3. Get new prediction and other outputs from grnet
+        _, new_pred, _ = grnet(sampled_input_pc_loop.cuda())
+        
+        # 4. Update current outputs
+        current_dense_cloud_pred = new_pred.cpu()
+
+    # logging.info("Loop upsampling finished.")
+    return torch.cat((sampling_pool, current_dense_cloud_pred), dim=1)
+
+
 def test_net(cfg, epoch_idx=-1, test_data_loader=None, test_writer=None, grnet=None, **kwargs):
     # Enable the inbuilt cudnn auto-tuner to find the best algorithm to use
     torch.backends.cudnn.benchmark = True
@@ -96,10 +156,18 @@ def test_net(cfg, epoch_idx=-1, test_data_loader=None, test_writer=None, grnet=N
             if test_writer is not None and model_idx < 3:
                 print('start to write images with test_writer')
                 scale = cfg.DATASETS.SMLM.scale
+                
+                # Loop upsampling
+                dense_cloud_pred_loop = _perform_loop_upsampling(grnet, data['partial_cloud'], dense_cloud_pred, cfg)
+                dense_cloud_pred_loop = dense_cloud_pred_loop.squeeze().cpu().numpy()
+                dense_cloud_pred_loop_img = utils.helpers.get_ptcloud_img(dense_cloud_pred_loop/scale)
+                test_writer.add_image('Model%02d/DensePredReconstruction-Loop' % model_idx, dense_cloud_pred_loop_img, epoch_idx, dataformats='HWC')
+                logging.info('Shape of dense_cloud_pred_loop: %s', dense_cloud_pred_loop.shape)
+                
                 input_pc = data['partial_cloud'].squeeze().cpu().numpy()
                 input_pc_img = utils.helpers.get_ptcloud_img(input_pc/scale)
                 test_writer.add_image('Model%02d/Input' % model_idx, input_pc_img, epoch_idx, dataformats='HWC')
-                dense_cloud_interp = dense_cloud_interp.squeeze().cpu().numpy()
+                dense_cloud_interp = dense_cloud_interp.squeeze().cpu().numpy()  # duplicated points
                 dense_cloud_interp_img = utils.helpers.get_ptcloud_img(dense_cloud_interp/scale)
                 test_writer.add_image('Model%02d/InterpReconstruction' % model_idx, dense_cloud_interp_img, epoch_idx, dataformats='HWC')
                 dense_cloud_pred = dense_cloud_pred.squeeze().cpu().numpy()
@@ -107,8 +175,12 @@ def test_net(cfg, epoch_idx=-1, test_data_loader=None, test_writer=None, grnet=N
                 test_writer.add_image('Model%02d/DensePredReconstruction' % model_idx, dense_cloud_pred_img, epoch_idx, dataformats='HWC')
                 gt_ptcloud = data['gtcloud'].squeeze().cpu().numpy()
                 gt_ptcloud_img = utils.helpers.get_ptcloud_img(gt_ptcloud/scale)
-                test_writer.add_image('Model%02d/GroundTruth' % model_idx, gt_ptcloud_img, epoch_idx, dataformats='HWC')
-
+                test_writer.add_image('Model%02d/GroundTruth-Sampled' % model_idx, gt_ptcloud_img, epoch_idx, dataformats='HWC')
+                
+                original_pc = data['original_cloud'].squeeze().cpu().numpy()
+                original_pc_img = utils.helpers.get_ptcloud_img(original_pc/scale)
+                test_writer.add_image('Model%02d/Original' % model_idx, original_pc_img, epoch_idx, dataformats='HWC')
+                
             # logging.info('Test[%d/%d] Taxonomy = %s Sample = %s Losses = %s Metrics = %s' %
             #              (model_idx + 1, n_samples, taxonomy_id, model_id, ['%.4f' % l for l in test_losses.val()
             #                                                                 ], ['%.4f' % m for m in _metrics]))

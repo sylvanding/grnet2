@@ -319,7 +319,7 @@ class GRNet_2(torch.nn.Module):
         point_features_8 = self.feature_sampling(
             partial_cloud, pt_features_8_r
         ).flatten(start_dim=2)
-        print("Sampled features 8:", point_features_8.shape) # [B, 2048, 2048]
+        # print("Sampled features 8:", point_features_8.shape) # [B, 2048, 2048]
         point_features_16 = self.feature_sampling(
             partial_cloud, pt_features_16_r
         ).flatten(start_dim=2)

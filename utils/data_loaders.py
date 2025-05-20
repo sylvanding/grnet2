@@ -98,6 +98,7 @@ class SMLMDataLoader(torch.utils.data.dataset.Dataset):
         self.is_scale_z = cfg.DATASETS.SMLM.is_scale_z
         self.is_scale_half = cfg.DATASETS.SMLM.is_scale_half
         self.scale = cfg.DATASETS.SMLM.scale
+        self.n_output_dense_points = cfg.CONST.N_OUTPUT_DENSE_POINTS
         if self.split == "train":
             self.is_random_sample = cfg.TRAIN.is_random_sample
         else:
@@ -233,12 +234,16 @@ class SMLMDataLoader(torch.utils.data.dataset.Dataset):
         partial_pc = copy.deepcopy(self.input_data[index])
         complete_pc = copy.deepcopy(self.gt_data[index])
         # original_pc = copy.deepcopy(self.original_data[index])
+        
+        # check point number of complete_pc
+        complete_pc_sampled = self.random_sample(complete_pc, self.n_output_dense_points)
+        
         if self.split == "train" or self.split == "valid":
             if self.is_random_sample:
                 partial_pc = self.random_sample(complete_pc, 2048)
             result['partial_cloud'] = partial_pc
-            result['gtcloud'] = complete_pc
-            # result['original_cloud'] = original_pc
+            result['gtcloud'] = complete_pc_sampled
+            result['original_cloud'] = complete_pc
             if self.split == "train":
                 # augment
                 if self.transforms is not None:
@@ -249,8 +254,8 @@ class SMLMDataLoader(torch.utils.data.dataset.Dataset):
                 "scale": self.normalize_params["scale"][index],
             }
             result['partial_cloud'] = partial_pc
-            result['gtcloud'] = complete_pc
-            # result['original_cloud'] = original_pc
+            result['gtcloud'] = complete_pc_sampled
+            result['original_cloud'] = complete_pc
             result['normalize_params'] = normalize_params
         return result
 
