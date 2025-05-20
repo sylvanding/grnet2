@@ -71,6 +71,13 @@ __global__ void gridding_kernel(int n_grid_vertices,
     int ly_offset = lower_y - min_y, uy_offset = upper_y - min_y;
     int lz_offset = lower_z - min_z, uz_offset = upper_z - min_z;
 
+    // If len_z is 1, uz_offset for indexing should be lz_offset
+    // to prevent accessing out of bounds for the z-dimension.
+    int indexing_uz_offset = uz_offset;
+    if (len_z == 1) {
+      indexing_uz_offset = lz_offset;
+    }
+
     // Compute weights and corresponding positions, a loop for 8 points
     // LLL -> Lower X, Lower Y, Lower Z
     grid_pt_indexes[j * 8 + 0] =
@@ -81,7 +88,7 @@ __global__ void gridding_kernel(int n_grid_vertices,
 
     // LLU -> Lower X, Lower Y, Upper Z
     grid_pt_indexes[j * 8 + 1] =
-      compute_index(lx_offset, ly_offset, uz_offset, len_y, len_z);
+      compute_index(lx_offset, ly_offset, indexing_uz_offset, len_y, len_z); // MODIFIED
     grid_pt_weights[j * 24 + 3] = compute_weight(pt_x, lower_x);
     grid_pt_weights[j * 24 + 4] = compute_weight(pt_y, lower_y);
     grid_pt_weights[j * 24 + 5] = compute_weight(pt_z, upper_z);
@@ -95,7 +102,7 @@ __global__ void gridding_kernel(int n_grid_vertices,
 
     // LUU -> Lower X, Upper Y, Upper Z
     grid_pt_indexes[j * 8 + 3] =
-      compute_index(lx_offset, uy_offset, uz_offset, len_y, len_z);
+      compute_index(lx_offset, uy_offset, indexing_uz_offset, len_y, len_z); // MODIFIED
     grid_pt_weights[j * 24 + 9]  = compute_weight(pt_x, lower_x);
     grid_pt_weights[j * 24 + 10] = compute_weight(pt_y, upper_y);
     grid_pt_weights[j * 24 + 11] = compute_weight(pt_z, upper_z);
@@ -109,7 +116,7 @@ __global__ void gridding_kernel(int n_grid_vertices,
 
     // ULU -> Upper X, Lower Y, Upper Z
     grid_pt_indexes[j * 8 + 5] =
-      compute_index(ux_offset, ly_offset, uz_offset, len_y, len_z);
+      compute_index(ux_offset, ly_offset, indexing_uz_offset, len_y, len_z); // MODIFIED
     grid_pt_weights[j * 24 + 15] = compute_weight(pt_x, upper_x);
     grid_pt_weights[j * 24 + 16] = compute_weight(pt_y, lower_y);
     grid_pt_weights[j * 24 + 17] = compute_weight(pt_z, upper_z);
@@ -123,7 +130,7 @@ __global__ void gridding_kernel(int n_grid_vertices,
 
     // UUU -> Upper X, Upper Y, Upper Z
     grid_pt_indexes[j * 8 + 7] =
-      compute_index(ux_offset, uy_offset, uz_offset, len_y, len_z);
+      compute_index(ux_offset, uy_offset, indexing_uz_offset, len_y, len_z); // MODIFIED
     grid_pt_weights[j * 24 + 21] = compute_weight(pt_x, upper_x);
     grid_pt_weights[j * 24 + 22] = compute_weight(pt_y, upper_y);
     grid_pt_weights[j * 24 + 23] = compute_weight(pt_z, upper_z);

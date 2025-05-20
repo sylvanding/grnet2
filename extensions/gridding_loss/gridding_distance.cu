@@ -66,16 +66,21 @@ __global__ void gridding_dist_kernel(int n_grid_vertices,
     int lx_offset = lower_x - min_x, ux_offset = upper_x - min_x;
     int ly_offset = lower_y - min_y, uy_offset = upper_y - min_y;
     int lz_offset = lower_z - min_z, uz_offset = upper_z - min_z;
+    
+    // If len_z is 1, uz_offset for indexing should be lz_offset
+    // to prevent accessing out of bounds for the z-dimension.
+    int indexing_uz_offset = uz_offset;
+    if (len_z == 1) {
+      indexing_uz_offset = lz_offset;
+    }
 
-    // Store the linear index of the 8 corners for the backward pass
-    // Compute weights for trilinear interpolation
     // LLL
     grid_pt_indexes[j * 8 + 0] = compute_index(lx_offset, ly_offset, lz_offset, len_y, len_z);
     grid_pt_weights[j * 24 + 0] = compute_weight(pt_x, lower_x);
     grid_pt_weights[j * 24 + 1] = compute_weight(pt_y, lower_y);
     grid_pt_weights[j * 24 + 2] = compute_weight(pt_z, lower_z);
     // LLU
-    grid_pt_indexes[j * 8 + 1] = compute_index(lx_offset, ly_offset, uz_offset, len_y, len_z);
+    grid_pt_indexes[j * 8 + 1] = compute_index(lx_offset, ly_offset, indexing_uz_offset, len_y, len_z);
     grid_pt_weights[j * 24 + 3] = compute_weight(pt_x, lower_x);
     grid_pt_weights[j * 24 + 4] = compute_weight(pt_y, lower_y);
     grid_pt_weights[j * 24 + 5] = compute_weight(pt_z, upper_z);
@@ -85,7 +90,7 @@ __global__ void gridding_dist_kernel(int n_grid_vertices,
     grid_pt_weights[j * 24 + 7] = compute_weight(pt_y, upper_y);
     grid_pt_weights[j * 24 + 8] = compute_weight(pt_z, lower_z);
     // LUU
-    grid_pt_indexes[j * 8 + 3] = compute_index(lx_offset, uy_offset, uz_offset, len_y, len_z);
+    grid_pt_indexes[j * 8 + 3] = compute_index(lx_offset, uy_offset, indexing_uz_offset, len_y, len_z);
     grid_pt_weights[j * 24 + 9]  = compute_weight(pt_x, lower_x);
     grid_pt_weights[j * 24 + 10] = compute_weight(pt_y, upper_y);
     grid_pt_weights[j * 24 + 11] = compute_weight(pt_z, upper_z);
@@ -95,7 +100,7 @@ __global__ void gridding_dist_kernel(int n_grid_vertices,
     grid_pt_weights[j * 24 + 13] = compute_weight(pt_y, lower_y);
     grid_pt_weights[j * 24 + 14] = compute_weight(pt_z, lower_z);
     // ULU
-    grid_pt_indexes[j * 8 + 5] = compute_index(ux_offset, ly_offset, uz_offset, len_y, len_z);
+    grid_pt_indexes[j * 8 + 5] = compute_index(ux_offset, ly_offset, indexing_uz_offset, len_y, len_z);
     grid_pt_weights[j * 24 + 15] = compute_weight(pt_x, upper_x);
     grid_pt_weights[j * 24 + 16] = compute_weight(pt_y, lower_y);
     grid_pt_weights[j * 24 + 17] = compute_weight(pt_z, upper_z);
@@ -105,7 +110,7 @@ __global__ void gridding_dist_kernel(int n_grid_vertices,
     grid_pt_weights[j * 24 + 19] = compute_weight(pt_y, upper_y);
     grid_pt_weights[j * 24 + 20] = compute_weight(pt_z, lower_z);
     // UUU
-    grid_pt_indexes[j * 8 + 7] = compute_index(ux_offset, uy_offset, uz_offset, len_y, len_z);
+    grid_pt_indexes[j * 8 + 7] = compute_index(ux_offset, uy_offset, indexing_uz_offset, len_y, len_z);
     grid_pt_weights[j * 24 + 21] = compute_weight(pt_x, upper_x);
     grid_pt_weights[j * 24 + 22] = compute_weight(pt_y, upper_y);
     grid_pt_weights[j * 24 + 23] = compute_weight(pt_z, upper_z);
