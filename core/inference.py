@@ -40,9 +40,14 @@ def descale_z(points, params):
 
     scale = params['scale'].detach().cpu().numpy()
     scale = scale[..., 2]
-    points = points.detach().cpu().numpy()
+    tensor_points = isinstance(points, torch.Tensor)
+    if tensor_points:
+        points = points.detach().cpu().numpy()
+    if scale.ndim == 2:
+        scale = scale[0]
     points[..., 2] *= scale
-    points = torch.from_numpy(points).cuda()
+    if tensor_points:
+        points = torch.from_numpy(points).cuda()
     return points
 
 

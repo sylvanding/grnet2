@@ -6,11 +6,13 @@
 # @Email:  cshzxie@gmail.com
 
 import logging
+import os
 import torch
 import torch.nn as nn
 from extensions.gridding import Gridding
 import utils.data_loaders
 import utils.helpers
+import utils.data_saver
 
 from extensions.chamfer_dist import ChamferDistance
 from extensions.gridding_loss import GriddingLoss
@@ -191,6 +193,14 @@ def test_net(cfg, epoch_idx=-1, test_data_loader=None, test_writer=None, grnet=N
                 original_pc = data['original_cloud'].squeeze().cpu().numpy()
                 original_pc_img = utils.helpers.get_ptcloud_img(original_pc/scale)
                 test_writer.add_image('Model%02d/Original' % model_idx, original_pc_img, epoch_idx, dataformats='HWC')
+                
+                if (epoch_idx % cfg.TRAIN.output_pc_csv_freq == 0 and epoch_idx > 0) or cfg.TRAIN.LOCAL:
+                    # save the pc to csv
+                    save_path = os.path.join(cfg.DIR.OUT_PATH, 'output_pc_csv',f'epoch_{epoch_idx}')
+                    utils.data_saver.save_pc_to_csv(cfg, dense_cloud_pred_loop, save_path, f'dense_cloud_pred_loop', data['normalize_params'])
+                    utils.data_saver.save_pc_to_csv(cfg, input_pc, save_path, f'input_pc', data['normalize_params'])
+                    utils.data_saver.save_pc_to_csv(cfg, gt_ptcloud, save_path, f'gt_ptcloud', data['normalize_params'])
+                    utils.data_saver.save_pc_to_csv(cfg, original_pc, save_path, f'original_pc', data['normalize_params'])
                 
             # logging.info('Test[%d/%d] Taxonomy = %s Sample = %s Losses = %s Metrics = %s' %
             #              (model_idx + 1, n_samples, taxonomy_id, model_id, ['%.4f' % l for l in test_losses.val()

@@ -253,7 +253,14 @@ class SMLMDataLoader(torch.utils.data.dataset.Dataset):
                 # augment
                 if self.transforms is not None:
                     result = self.transforms(result)
-                    result = self.clamp_points(result)
+                    if self.use_2d_grnet2:
+                        result = self.clamp_points(result)
+            if self.split == "valid":
+                normalize_params = {
+                    "centroid": self.normalize_params["centroid"][index],
+                    "scale": self.normalize_params["scale"][index],
+                }
+                result['normalize_params'] = normalize_params
         else:
             normalize_params = {
                 "centroid": self.normalize_params["centroid"][index],

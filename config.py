@@ -80,7 +80,7 @@ __C.NETWORK.GRIDDING_LOSS_ALPHAS_SPARSE          = [0.1]
 __C.NETWORK.GRIDDING_LOSS_SCALES_DENSE           = [(128, 128, 32), (64, 64, 16), (32, 32, 8)]
 __C.NETWORK.GRIDDING_LOSS_ALPHAS_DENSE           = [0.3, 0.3, 0.3]
 __C.NETWORK.USE_3D_UNET_RECON_GRID_L1_LOSS       = False
-__C.NETWORK.USE_2D_GRNET2                        = True  # if is True, use 2D GRNet2
+__C.NETWORK.USE_2D_GRNET2                        = False  # if is True, use 2D GRNet2
 __C.NETWORK.GRIDDING_LOSS_SCALES_2D              = [(256, 256, 1), (128, 128, 1)]
 __C.NETWORK.GRIDDING_LOSS_ALPHAS_2D              = [0.8, 0.2]
 
@@ -96,7 +96,7 @@ __C.TRAIN.LR_MILESTONES                          = [500]
 __C.TRAIN.GAMMA                                  = .5
 __C.TRAIN.BETAS                                  = (.9, .999)
 __C.TRAIN.WEIGHT_DECAY                           = 1e-6
-__C.TRAIN.LOCAL                                  = False
+__C.TRAIN.LOCAL                                  = True
 __C.TRAIN.is_random_sample                       = True
 __C.TRAIN.is_fine_tune                           = False
 __C.TRAIN.transforms                             = True
@@ -126,6 +126,7 @@ __C.TRAIN.using_original_data_for_dense_gridding = True
 __C.TRAIN.using_original_data_for_dense_chamfer  = True
 __C.TRAIN.noise_points_ratio                     = 0.0
 __C.TRAIN.cdloss_weight                          = 1 # cfg.TRAIN.cdloss_weight * _loss_chamfer_dist
+__C.TRAIN.output_pc_csv_freq                     = 20
 #
 # Test
 #
