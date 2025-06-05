@@ -84,6 +84,15 @@ class Gridding(torch.nn.Module):
 
     def forward(self, ptcloud):
         # ptcloud assumed in [-1, 1]^3, scale to grid coordinates
+        # Add cleaning for NaN and Inf values in ptcloud
+        # if torch.isnan(ptcloud).any():
+        #     raise ValueError("Input ptcloud to Gridding contains NaNs. Replacing with 0.")
+        #     ptcloud = torch.nan_to_num(ptcloud, nan=0.0)
+        # if torch.isinf(ptcloud).any():
+        #     raise ValueError("Input ptcloud to Gridding contains Infs. Replacing with 0.")
+        #     # torch.nan_to_num can also handle infs if specified, e.g., posinf=0.0, neginf=0.0
+        #     # For simplicity and to ensure infs are also handled if nan_to_num(nan=0.0) doesn't cover them:
+        #     ptcloud = torch.nan_to_num(ptcloud, nan=0.0, posinf=0.0, neginf=0.0)
         # --- MODIFICATION START ---
         current_scale_factors = self.scale_factors
         if ptcloud.device != current_scale_factors.device:

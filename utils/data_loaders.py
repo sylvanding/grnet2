@@ -99,6 +99,7 @@ class SMLMDataLoader(torch.utils.data.dataset.Dataset):
         self.is_scale_half = cfg.DATASETS.SMLM.is_scale_half
         self.scale = cfg.DATASETS.SMLM.scale
         self.n_output_dense_points = cfg.CONST.N_OUTPUT_DENSE_POINTS
+        self.use_2d_grnet2 = cfg.NETWORK.USE_2D_GRNET2
         if self.split == "train":
             self.is_random_sample = cfg.TRAIN.is_random_sample
         else:
@@ -235,6 +236,10 @@ class SMLMDataLoader(torch.utils.data.dataset.Dataset):
         complete_pc = copy.deepcopy(self.gt_data[index])
         # original_pc = copy.deepcopy(self.original_data[index])
         
+        if self.use_2d_grnet2:
+            partial_pc[:, 2] = 0
+            complete_pc[:, 2] = 0
+        
         # check point number of complete_pc
         complete_pc_sampled = self.random_sample(complete_pc, self.n_output_dense_points)
         
@@ -248,6 +253,7 @@ class SMLMDataLoader(torch.utils.data.dataset.Dataset):
                 # augment
                 if self.transforms is not None:
                     result = self.transforms(result)
+                    result = self.clamp_points(result)
         else:
             normalize_params = {
                 "centroid": self.normalize_params["centroid"][index],
@@ -257,6 +263,26 @@ class SMLMDataLoader(torch.utils.data.dataset.Dataset):
             result['gtcloud'] = complete_pc_sampled
             result['original_cloud'] = complete_pc
             result['normalize_params'] = normalize_params
+        # 如果使用2D GRNet2，则将点云归一化到-1~1之间
+        # if self.use_2d_grnet2:
+        #     result['partial_cloud'] = torch.clamp(result['partial_cloud'], -1, 1)
+        #     result['gtcloud'] = torch.clamp(result['gtcloud'], -1, 1)
+        #     result['original_cloud'] = torch.clamp(result['original_cloud'], -1, 1)
+        # if self.use_2d_grnet2:
+        #     notzero = torch.sum(result['partial_cloud'][:,2] != 0)
+        #     if notzero>0:
+        #         logging.error("notzero: %d", notzero)
+        #     if torch.isnan(result['partial_cloud']).any():
+        #         logging.error("partial_cloud has NaN")
+        #     if torch.isinf(result['partial_cloud']).any():
+        #         logging.error("partial_cloud has Inf")
+        return result
+
+    def clamp_points(self, result):
+        result['partial_cloud'] = torch.clamp(result['partial_cloud'], -0.95, 0.95)
+        result['gtcloud'] = torch.clamp(result['gtcloud'], -0.95, 0.95)
+        if 'original_cloud' in result:
+            result['original_cloud'] = torch.clamp(result['original_cloud'], -0.95, 0.95)
         return result
 
     def __len__(self):

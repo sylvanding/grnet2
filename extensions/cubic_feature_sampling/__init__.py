@@ -74,7 +74,7 @@ class CubicFeatureSampling(torch.nn.Module):
         # More robust: scaled_coord = (pt_coord + 1) * 0.5 * (D - 1) avoids potential issues if D=1
         scaling_factors = torch.from_numpy((scales - 1) * 0.5).to(ptcloud.device).float()
         biases = scaling_factors # Bias is also (D-1)*0.5
-
+        
         # Scale ptcloud: B, N, 3 -> B, N, 3
         scaled_ptcloud = (ptcloud + 1.0) * scaling_factors.unsqueeze(0).unsqueeze(0) # Apply scaling and bias implicitly
 

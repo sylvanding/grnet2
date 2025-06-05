@@ -185,8 +185,18 @@ class RandomRotatePoints(object):
         angle = self.angle * rnd_value
         # 只在xy平面旋转，使用z轴作为旋转轴
         trfm_mat = np.dot(transforms3d.axangles.axangle2mat([0, 0, 1], angle), trfm_mat)
-
-        ptcloud[:, :3] = np.dot(ptcloud[:, :3], trfm_mat.T)
+        if isinstance(ptcloud, torch.Tensor):
+            original_device = ptcloud.device
+            # 将PyTorch Tensor转换为NumPy array，并移动到CPU
+            points_to_rotate = ptcloud[:, :3].cpu().numpy()
+            # 执行旋转
+            rotated_points_numpy = np.dot(points_to_rotate, trfm_mat.T)
+            # 将结果转换回PyTorch Tensor，并移动到原始设备
+            ptcloud[:, :3] = torch.from_numpy(rotated_points_numpy).to(original_device)
+        else:
+            # 如果ptcloud不是Tensor (例如，已经是NumPy array)，则按原方式处理
+            ptcloud[:, :3] = np.dot(ptcloud[:, :3], trfm_mat.T)
+        # print("after rotate", ptcloud.max(axis=0), ptcloud.min(axis=0))
         return ptcloud
 
 

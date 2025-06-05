@@ -23,6 +23,7 @@ from extensions.gridding import Gridding
 from extensions.chamfer_dist import ChamferDistance
 from extensions.gridding_loss import GriddingLoss
 from models.grnet_2 import GRNet_2
+from models.grnet_2_2D import GRNet_2_2D
 from utils.average_meter import AverageMeter
 from utils.metrics import Metrics
 from tqdm import tqdm
@@ -75,7 +76,10 @@ def train_net(cfg):
     val_writer = SummaryWriter(os.path.join(cfg.DIR.LOGS, 'test'))
 
     # Create the networks
-    grnet = GRNet_2(cfg)
+    if cfg.NETWORK.USE_2D_GRNET2:
+        grnet = GRNet_2_2D(cfg)
+    else:
+        grnet = GRNet_2(cfg)
     grnet.apply(utils.helpers.init_weights)
     logging.debug('Parameters in GRNet: %d.' % utils.helpers.count_parameters(grnet))
 
@@ -100,9 +104,14 @@ def train_net(cfg):
     gridding_loss_dense = GriddingLoss(
         scales=cfg.NETWORK.GRIDDING_LOSS_SCALES_DENSE,
         alphas=cfg.NETWORK.GRIDDING_LOSS_ALPHAS_DENSE)
-    gridding_scales = (128, 128, 32)
-    gridding = Gridding(scales=gridding_scales)
-    l1_loss = nn.L1Loss()
+    if cfg.NETWORK.USE_3D_UNET_RECON_GRID_L1_LOSS:
+        gridding_scales = (128, 128, 32)
+        gridding = Gridding(scales=gridding_scales)
+        l1_loss = nn.L1Loss()
+    else:
+        gridding_scales = None
+        gridding = None
+        l1_loss = None
 
     # Load pretrained model if exists
     init_epoch = 0
@@ -148,8 +157,8 @@ def train_net(cfg):
 
             dense_cloud_interp, dense_cloud_pred, pt_features_xyz_r = grnet(data)
 
-            gridding_gt = gridding(data['gtcloud']).view(-1, 1, *gridding_scales)
             if cfg.NETWORK.USE_3D_UNET_RECON_GRID_L1_LOSS:
+                gridding_gt = gridding(data['gtcloud']).view(-1, 1, *gridding_scales)
                 _loss_l1_3d_unet_recon_grid = l1_loss(pt_features_xyz_r, gridding_gt)
             else:
                 _loss_l1_3d_unet_recon_grid = torch.tensor(0.0, device=pt_features_xyz_r.device)

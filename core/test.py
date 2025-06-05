@@ -117,9 +117,14 @@ def test_net(cfg, epoch_idx=-1, test_data_loader=None, test_writer=None, grnet=N
         scales=cfg.NETWORK.GRIDDING_LOSS_SCALES_DENSE,
         alphas=cfg.NETWORK.GRIDDING_LOSS_ALPHAS_DENSE)
     
-    l1_loss = nn.L1Loss()
-    gridding_scales = (128, 128, 32)
-    gridding = Gridding(scales=gridding_scales)
+    if cfg.NETWORK.USE_3D_UNET_RECON_GRID_L1_LOSS:
+        l1_loss = nn.L1Loss()
+        gridding_scales = (128, 128, 32)
+        gridding = Gridding(scales=gridding_scales)
+    else:
+        l1_loss = None
+        gridding_scales = None
+        gridding = None
 
     # Testing loop
     n_samples = len(test_data_loader)

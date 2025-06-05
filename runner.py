@@ -66,6 +66,12 @@ def get_args_from_command_line():
         help="Fine tune the model with L1 gridding loss",
         default=False,
     )
+    parser.add_argument(
+        "--use_2d_grnet2",
+        dest="use_2d_grnet2",
+        help="Use 2D GRNet2",
+        default=False,
+    )
     args = parser.parse_args()
 
     # inference mode start
@@ -91,6 +97,16 @@ def main():
         cfg.CONST.WEIGHTS = args.weights
     if args.fine_tune is not None:
         cfg.TRAIN.is_fine_tune = args.fine_tune
+    if not cfg.NETWORK.USE_2D_GRNET2 and args.use_2d_grnet2 is not None:
+        cfg.NETWORK.USE_2D_GRNET2 = args.use_2d_grnet2
+    if cfg.NETWORK.USE_2D_GRNET2:
+        print("Use 2D GRNet2!!!!")
+
+    if cfg.NETWORK.USE_2D_GRNET2:
+        cfg.NETWORK.GRIDDING_LOSS_SCALES_SPARSE = cfg.NETWORK.GRIDDING_LOSS_SCALES_2D
+        cfg.NETWORK.GRIDDING_LOSS_SCALES_DENSE = cfg.NETWORK.GRIDDING_LOSS_SCALES_2D
+        cfg.NETWORK.GRIDDING_LOSS_ALPHAS_SPARSE = cfg.NETWORK.GRIDDING_LOSS_ALPHAS_2D
+        cfg.NETWORK.GRIDDING_LOSS_ALPHAS_DENSE = cfg.NETWORK.GRIDDING_LOSS_ALPHAS_2D
 
     # Print config
     print("Use config:")
