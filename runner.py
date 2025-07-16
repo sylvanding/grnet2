@@ -72,6 +72,12 @@ def get_args_from_command_line():
         help="Use 2D GRNet2",
         default=False,
     )
+    parser.add_argument(
+        "--use_img_guide",
+        dest="use_img_guide",
+        help="Use image guide for training and testing",
+        default=True,
+    )
     args = parser.parse_args()
 
     # inference mode start
@@ -101,6 +107,10 @@ def main():
         cfg.NETWORK.USE_2D_GRNET2 = args.use_2d_grnet2
     if cfg.NETWORK.USE_2D_GRNET2:
         print("Use 2D GRNet2!!!!")
+
+    if args.use_img_guide:
+        cfg.NETWORK.USE_IMG_GUIDE = True
+        print("Use image guide!!!!")
 
     if cfg.NETWORK.USE_2D_GRNET2:
         cfg.NETWORK.GRIDDING_LOSS_SCALES_SPARSE = cfg.NETWORK.GRIDDING_LOSS_SCALES_2D

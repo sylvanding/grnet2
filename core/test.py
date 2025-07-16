@@ -45,7 +45,7 @@ def _sample_points(pc, n_points):
     return sampled_input_pc_loop
 
 
-def _perform_loop_upsampling(grnet, original_input_pc_for_loop, initial_dense_cloud_pred, cfg):
+def _perform_loop_upsampling(grnet, original_input_pc_for_loop, initial_dense_cloud_pred, cfg, guide_img=None):
     """
     Performs loop upsampling to refine the predicted dense point cloud.
     """
@@ -73,7 +73,14 @@ def _perform_loop_upsampling(grnet, original_input_pc_for_loop, initial_dense_cl
         sampled_input_pc_loop = _sample_points(sampling_pool, N_INPUT_POINTS_loop)
 
         # 3. Get new prediction and other outputs from grnet
-        _, new_pred, _ = grnet(sampled_input_pc_loop.cuda())
+        if cfg.NETWORK.USE_IMG_GUIDE and guide_img is not None:
+            data_loop = {
+                'partial_cloud': sampled_input_pc_loop.cuda(),
+                'guide_img': guide_img
+            }
+            _, new_pred, _ = grnet(data_loop)
+        else:
+            _, new_pred, _ = grnet(sampled_input_pc_loop.cuda())
         
         # 4. Update current outputs
         current_dense_cloud_pred = new_pred.cpu()
@@ -145,7 +152,10 @@ def test_net(cfg, epoch_idx=-1, test_data_loader=None, test_writer=None, grnet=N
                     continue
                 data[k] = utils.helpers.var_or_cuda(v)
 
-            dense_cloud_interp, dense_cloud_pred, pt_features_xyz_r = grnet(data)
+            if cfg.NETWORK.USE_IMG_GUIDE:
+                dense_cloud_interp, dense_cloud_pred, pt_features_xyz_r = grnet(data)
+            else:
+                dense_cloud_interp, dense_cloud_pred, pt_features_xyz_r = grnet(data['partial_cloud'])
             _loss_chamfer_dist = chamfer_dist(dense_cloud_pred, data['gtcloud'])
             _loss_gridding_loss = gridding_loss_dense(dense_cloud_pred, data['gtcloud'])
             if cfg.NETWORK.USE_3D_UNET_RECON_GRID_L1_LOSS:
@@ -171,7 +181,11 @@ def test_net(cfg, epoch_idx=-1, test_data_loader=None, test_writer=None, grnet=N
                 scale = cfg.DATASETS.SMLM.scale
                 
                 # Loop upsampling
-                dense_cloud_pred_loop = _perform_loop_upsampling(grnet, data['partial_cloud'], dense_cloud_pred, cfg)
+                if cfg.NETWORK.USE_IMG_GUIDE:
+                    guide_img = data.get('guide_img')
+                else:
+                    guide_img = None
+                dense_cloud_pred_loop = _perform_loop_upsampling(grnet, data['partial_cloud'], dense_cloud_pred, cfg, guide_img=guide_img)
                 dense_cloud_pred_loop = dense_cloud_pred_loop.squeeze().cpu().numpy()
                 dense_cloud_pred_loop_img = utils.helpers.get_ptcloud_img(dense_cloud_pred_loop/scale)
                 test_writer.add_image('Model%02d/DensePredReconstruction-Loop' % model_idx, dense_cloud_pred_loop_img, epoch_idx, dataformats='HWC')
@@ -189,6 +203,10 @@ def test_net(cfg, epoch_idx=-1, test_data_loader=None, test_writer=None, grnet=N
                 gt_ptcloud = data['gtcloud'].squeeze().cpu().numpy()
                 gt_ptcloud_img = utils.helpers.get_ptcloud_img(gt_ptcloud/scale)
                 test_writer.add_image('Model%02d/GroundTruth-Sampled' % model_idx, gt_ptcloud_img, epoch_idx, dataformats='HWC')
+                
+                if cfg.NETWORK.USE_IMG_GUIDE:
+                    guide_img = data.get('guide_img').squeeze(0).cpu().numpy().transpose(1,2,0)
+                    test_writer.add_image('Model%02d/GuideImg' % model_idx, guide_img, epoch_idx, dataformats='HWC')
                 
                 original_pc = data['original_cloud'].squeeze().cpu().numpy()
                 original_pc_img = utils.helpers.get_ptcloud_img(original_pc/scale)

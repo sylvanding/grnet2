@@ -14,6 +14,38 @@ from extensions.cubic_feature_sampling import CubicFeatureSampling
 from models.pointnet2_utils import PointNetSetAbstraction, PointNetFeaturePropagation
 
 
+class ImageEncoder(nn.Module):
+    def __init__(self, in_channels=1, out_channels_list=None):
+        super().__init__()
+        if out_channels_list is None:
+            out_channels_list = [64, 128, 256]
+        
+        self.conv_blocks = nn.ModuleList()
+        current_channels = in_channels
+        for i, out_ch in enumerate(out_channels_list):
+            self.conv_blocks.append(
+                nn.Sequential(
+                    nn.Conv2d(current_channels, out_ch, kernel_size=3, stride=1, padding=1),
+                    nn.BatchNorm2d(out_ch),
+                    nn.SiLU(),
+                    nn.Conv2d(out_ch, out_ch, kernel_size=3, stride=1, padding=1),
+                    nn.BatchNorm2d(out_ch),
+                    nn.SiLU(),
+                    nn.AvgPool2d(kernel_size=2, stride=2)
+                )
+            )
+            current_channels = out_ch
+
+    def forward(self, x):
+        features = [x]
+        for block in self.conv_blocks:
+            x = block(x)
+            features.append(x)
+        
+        global_feat = nn.functional.adaptive_avg_pool2d(x, (1, 1)).squeeze(-1).squeeze(-1)
+        return features, global_feat
+
+
 class AttentionGate3D(nn.Module):
     def __init__(self, F_g, F_x, F_int):
         super(AttentionGate3D, self).__init__()
@@ -45,33 +77,39 @@ class AttentionGate3D(nn.Module):
 
 
 class PointNet2FeatureExtractor(nn.Module):
-    def __init__(self):
+    def __init__(self, use_img_guide=False):
         super(PointNet2FeatureExtractor, self).__init__()
         # Encoder (Feature Extraction)
         # Use PointNetSetAbstraction from models.pointnet2_utils which uses CUDA ops
+        point_feature_dim = 3
+        if use_img_guide:
+            point_feature_dim += 256 + 256 + 128 + 64 + 1 # global_feat_dim + point_features_dim
 
         # Input points are l0_points (B, 3, N)
-        self.sa1 = PointNetSetAbstraction(npoint=2048 // 2, radius=0.05, nsample=16, in_channel=3, mlp=[32, 32, 64], group_all=False)
+        self.sa1 = PointNetSetAbstraction(npoint=2048 // 2, radius=0.05, nsample=16, in_channel=point_feature_dim, mlp=[512, 256, 256], group_all=False)
         # Input points are l1_points (B, 64, N/4)
-        self.sa2 = PointNetSetAbstraction(npoint=2048 // 4, radius=0.1, nsample=16, in_channel=64, mlp=[64, 64, 128], group_all=False)
+        self.sa2 = PointNetSetAbstraction(npoint=2048 // 4, radius=0.1, nsample=16, in_channel=256, mlp=[256, 128, 64], group_all=False)
         # Input points are l2_points (B, 128, N/16)
-        self.sa3 = PointNetSetAbstraction(npoint=2048 // 8, radius=0.2, nsample=16, in_channel=128, mlp=[128, 128, 256], group_all=False)
+        self.sa3 = PointNetSetAbstraction(npoint=2048 // 8, radius=0.2, nsample=16, in_channel=64, mlp=[64, 128, 256], group_all=False)
         # Input points are l3_points (B, 256, N/32)
         self.sa4 = PointNetSetAbstraction(npoint=2048 // 16, radius=0.4, nsample=16, in_channel=256, mlp=[256, 256, 512], group_all=False)
 
         # Decoder (For Reconstruction)
         # Input channels based on concatenation of skip connection and upsampled features
         self.fp4 = PointNetFeaturePropagation(in_channel=512 + 256, mlp=[256, 256]) # 512 from sa4, 256 from sa3
-        self.fp3 = PointNetFeaturePropagation(in_channel=256 + 128, mlp=[256, 256]) # 256 from fp4, 128 from sa2
-        self.fp2 = PointNetFeaturePropagation(in_channel=256 + 64, mlp=[256, 128])  # 256 from fp3, 64 from sa1
-        self.fp1 = PointNetFeaturePropagation(in_channel=128 + 3, mlp=[128, 128])   # 128 from fp2, 3 from l0_points (initial xyz)
+        self.fp3 = PointNetFeaturePropagation(in_channel=256 + 64, mlp=[256, 256]) # 256 from fp4, 64 from sa2
+        self.fp2 = PointNetFeaturePropagation(in_channel=256 + 256, mlp=[256, 128])  # 256 from fp3, 256 from sa1
+        self.fp1 = PointNetFeaturePropagation(in_channel=128 + point_feature_dim, mlp=[128, 128])   # 128 from fp2, 3 from l0_points (initial xyz)
 
         # self.final_conv = nn.Conv1d(128, 3, 1)
 
-    def forward(self, xyz):
+    def forward(self, xyz, img_features=None):
         # xyz shape: [B, 3, N]
         l0_xyz = xyz
-        l0_points = xyz # Use original xyz as features for the first layer
+        if img_features is not None:
+            l0_points = torch.cat([xyz, img_features], dim=1)
+        else:
+            l0_points = xyz # Use original xyz as features for the first layer
 
         # Feature Extraction
         l1_xyz, l1_points = self.sa1(l0_xyz, l0_points) # l1_points: [B, 64, N/4]
@@ -122,8 +160,11 @@ class GRNet_2(torch.nn.Module):
         super(GRNet_2, self).__init__()
         self.gridding_scales = (128, 128, 32)
         self.gridding = Gridding(scales=self.gridding_scales)
+        self.use_img_guide = cfg.NETWORK.USE_IMG_GUIDE if cfg else False
+        if self.use_img_guide:
+            self.image_encoder = ImageEncoder()
 
-        self.pointnet2_feature_extractor = PointNet2FeatureExtractor()
+        self.pointnet2_feature_extractor = PointNet2FeatureExtractor(use_img_guide=self.use_img_guide)
 
         # --- Encoder ---
         self.conv1 = torch.nn.Sequential(
@@ -243,6 +284,8 @@ class GRNet_2(torch.nn.Module):
             partial_cloud = data[
                 "partial_cloud"
             ]  # Expected shape (B, N_partial, 3) in [-1, 1]
+            if self.use_img_guide:
+                guide_img = data["guide_img"]
         else:
             partial_cloud = data  # Assume input is the partial cloud tensor
 
@@ -252,11 +295,37 @@ class GRNet_2(torch.nn.Module):
         
         dense_cloud_interp = partial_cloud.unsqueeze(dim=2).repeat(1, 1, 8, 1).view(-1, self.n_dense_points, 3).contiguous()
 
-        partial_cloud_features = (
-            self.pointnet2_feature_extractor(partial_cloud.permute(0, 2, 1).contiguous())
-            .permute(0, 2, 1)
-            .contiguous()
-        ) # [B, 2048, 128]
+        if self.use_img_guide:
+            guide_features, global_feat = self.image_encoder(guide_img)
+            coords = partial_cloud[:, :, :2].unsqueeze(1) # (B, 1, N, 2)
+            
+            point_features_list = []
+            for feat_map in guide_features:
+                # feat_map: (B, C, H, W)
+                sampled_features = nn.functional.grid_sample(
+                    feat_map, coords, mode='bilinear', padding_mode='border', align_corners=False
+                ) # (B, C, 1, N) 
+
+                point_features_list.append(sampled_features.squeeze(2)) # (B, C, N)
+            
+            img_feats = torch.cat(point_features_list, dim=1) # (B, C_total, N)
+            
+            N = partial_cloud.shape[1]
+            global_feat_expanded = global_feat.unsqueeze(1).expand(-1, N, -1).transpose(1, 2) # (B, C_global, N)
+            
+            img_feats = torch.cat([img_feats, global_feat_expanded], dim=1)
+            
+            partial_cloud_features = (
+                self.pointnet2_feature_extractor(partial_cloud.permute(0, 2, 1).contiguous(), img_feats)
+                .permute(0, 2, 1)
+                .contiguous()
+            ) # [B, 2048, 128]
+        else:
+            partial_cloud_features = (
+                self.pointnet2_feature_extractor(partial_cloud.permute(0, 2, 1).contiguous())
+                .permute(0, 2, 1)
+                .contiguous()
+            ) # [B, 2048, 128]
 
         # print(partial_cloud.size())     # torch.Size([batch_size, N_partial, 3])
         # Gridding output: (B, Dx*Dy*Dz), reshape to (B, 1, Dx, Dy, Dz)

@@ -21,3 +21,7 @@ lmdb
 hydra-core==0.11.3
 pytorch-lightning==0.7.1
 fvcore
+
+# image guided
+imageio
+tifffile

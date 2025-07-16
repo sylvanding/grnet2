@@ -26,6 +26,7 @@ import copy
 from typing import Union, Tuple
 import h5py
 import os
+from utils.render import render_to_2d_image
 
 
 @unique
@@ -100,6 +101,8 @@ class SMLMDataLoader(torch.utils.data.dataset.Dataset):
         self.scale = cfg.DATASETS.SMLM.scale
         self.n_output_dense_points = cfg.CONST.N_OUTPUT_DENSE_POINTS
         self.use_2d_grnet2 = cfg.NETWORK.USE_2D_GRNET2
+        self.use_img_guide = cfg.NETWORK.USE_IMG_GUIDE
+        self.img_size = cfg.CONST.IMG_SIZE
         if self.split == "train":
             self.is_random_sample = cfg.TRAIN.is_random_sample
         else:
@@ -283,6 +286,27 @@ class SMLMDataLoader(torch.utils.data.dataset.Dataset):
         #         logging.error("partial_cloud has NaN")
         #     if torch.isinf(result['partial_cloud']).any():
         #         logging.error("partial_cloud has Inf")
+        if self.use_img_guide:
+            # The point cloud is normalized to [-1, 1].
+            # We need to scale it to pixel coordinates [0, img_size].
+            points_for_render = result["gtcloud"]
+            if isinstance(points_for_render, torch.Tensor):
+                points_for_render = points_for_render.numpy()
+            
+            points_pixel_coords = (points_for_render + 1) * self.img_size / 2
+
+            guide_image = render_to_2d_image(
+                points=points_pixel_coords,
+                image_size=(self.img_size, self.img_size),
+                psf_sigma_px=1.0, 
+                output_dtype=np.float32
+            )
+            # Normalize to [0, 1] and add channel dimension
+            if guide_image.max() > 0:
+                guide_image = guide_image / guide_image.max()
+            
+            result["guide_img"] = torch.from_numpy(guide_image).unsqueeze(0).float()
+            
         return result
 
     def clamp_points(self, result):

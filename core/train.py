@@ -155,7 +155,10 @@ def train_net(cfg):
             for k, v in data.items():
                 data[k] = utils.helpers.var_or_cuda(v)
 
-            dense_cloud_interp, dense_cloud_pred, pt_features_xyz_r = grnet(data)
+            if cfg.NETWORK.USE_IMG_GUIDE:
+                dense_cloud_interp, dense_cloud_pred, pt_features_xyz_r = grnet(data)
+            else:
+                dense_cloud_interp, dense_cloud_pred, pt_features_xyz_r = grnet(data['partial_cloud'])
 
             if cfg.NETWORK.USE_3D_UNET_RECON_GRID_L1_LOSS:
                 gridding_gt = gridding(data['gtcloud']).view(-1, 1, *gridding_scales)

@@ -31,11 +31,11 @@ __C.DATASETS.KITTI.PARTIAL_POINTS_PATH           = '/home/SENSETIME/xiehaozhe/Da
 __C.DATASETS.KITTI.BOUNDING_BOX_FILE_PATH        = '/home/SENSETIME/xiehaozhe/Datasets/KITTI/bboxes/%s.txt'
 __C.DATASETS.SMLM                                = edict()
 __C.DATASETS.SMLM.ROOT_DIR                       = '/repos/datasets/smlm_pc'
-__C.DATASETS.SMLM.DATASET_NAME                   = 'mito_pc_16384_2048.h5'
+__C.DATASETS.SMLM.DATASET_NAME                   = 'mt_pc_16384_2048_30_40_5.5.h5'
 __C.DATASETS.SMLM.is_scale_z                     = True
 __C.DATASETS.SMLM.is_scale_half                  = False
 __C.DATASETS.SMLM.scale                          = 0.9
-__C.DATASETS.SMLM.N_POINTS                       = 16384 # 16384*8
+__C.DATASETS.SMLM.N_POINTS                       = 16384*8 # 16384 for no loop upsampling
 
 #
 # Dataset
@@ -50,10 +50,11 @@ __C.DATASET.TEST_DATASET                         = 'SMLM'
 #
 __C.CONST                                        = edict()
 __C.CONST.DEVICE                                 = '0'
-__C.CONST.NUM_WORKERS                            = 4
+__C.CONST.NUM_WORKERS                            = 2
 __C.CONST.N_INPUT_POINTS                         = 2048
-__C.CONST.UPSAMPLE_RATIO                         = 8
+__C.CONST.UPSAMPLE_RATIO                         = 8 # 8
 __C.CONST.N_OUTPUT_DENSE_POINTS                  = __C.CONST.N_INPUT_POINTS * __C.CONST.UPSAMPLE_RATIO
+__C.CONST.IMG_SIZE = 128
 
 #
 # Directories
@@ -81,6 +82,7 @@ __C.NETWORK.GRIDDING_LOSS_SCALES_DENSE           = [(128, 128, 32), (64, 64, 16)
 __C.NETWORK.GRIDDING_LOSS_ALPHAS_DENSE           = [0.3, 0.3, 0.3]
 __C.NETWORK.USE_3D_UNET_RECON_GRID_L1_LOSS       = False
 __C.NETWORK.USE_2D_GRNET2                        = False  # if is True, use 2D GRNet2
+__C.NETWORK.USE_IMG_GUIDE                        = True
 __C.NETWORK.GRIDDING_LOSS_SCALES_2D              = [(256, 256, 1), (128, 128, 1)]
 __C.NETWORK.GRIDDING_LOSS_ALPHAS_2D              = [0.8, 0.2]
 
@@ -96,7 +98,7 @@ __C.TRAIN.LR_MILESTONES                          = [500]
 __C.TRAIN.GAMMA                                  = .5
 __C.TRAIN.BETAS                                  = (.9, .999)
 __C.TRAIN.WEIGHT_DECAY                           = 1e-6
-__C.TRAIN.LOCAL                                  = True
+__C.TRAIN.LOCAL                                  = False
 __C.TRAIN.is_random_sample                       = True
 __C.TRAIN.is_fine_tune                           = False
 __C.TRAIN.transforms                             = True
@@ -125,7 +127,7 @@ __C.TRAIN.transforms_params                      = [
 __C.TRAIN.using_original_data_for_dense_gridding = True
 __C.TRAIN.using_original_data_for_dense_chamfer  = True
 __C.TRAIN.noise_points_ratio                     = 0.0
-__C.TRAIN.cdloss_weight                          = 1 # cfg.TRAIN.cdloss_weight * _loss_chamfer_dist
+__C.TRAIN.cdloss_weight                          = 100 # cfg.TRAIN.cdloss_weight * _loss_chamfer_dist
 __C.TRAIN.output_pc_csv_freq                     = 20
 #
 # Test
