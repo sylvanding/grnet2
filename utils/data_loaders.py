@@ -289,7 +289,7 @@ class SMLMDataLoader(torch.utils.data.dataset.Dataset):
         if self.use_img_guide:
             # The point cloud is normalized to [-1, 1].
             # We need to scale it to pixel coordinates [0, img_size].
-            points_for_render = result["gtcloud"]
+            points_for_render = result["original_cloud"]
             if isinstance(points_for_render, torch.Tensor):
                 points_for_render = points_for_render.numpy()
             

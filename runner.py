@@ -78,6 +78,12 @@ def get_args_from_command_line():
         help="Use image guide for training and testing",
         default=True,
     )
+    parser.add_argument(
+        "--use_attention",
+        dest="use_attention",
+        help="Use attention mechanism in the decoder",
+        default=False,
+    )
     args = parser.parse_args()
 
     # inference mode start
@@ -111,6 +117,10 @@ def main():
     if args.use_img_guide:
         cfg.NETWORK.USE_IMG_GUIDE = True
         print("Use image guide!!!!")
+
+    if args.use_attention:
+        cfg.NETWORK.USE_ATTENTION = True
+        print("Use attention!!!!")
 
     if cfg.NETWORK.USE_2D_GRNET2:
         cfg.NETWORK.GRIDDING_LOSS_SCALES_SPARSE = cfg.NETWORK.GRIDDING_LOSS_SCALES_2D
